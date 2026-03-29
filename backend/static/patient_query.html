@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Patient Agent · 患者信息检索</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    :root {
+      --page-bg: #e8eaed;
+      --card: #ffffff;
+      --text: #1a1d21;
+      --muted: #5c6370;
+      --border: #d8dce3;
+      --accent: #166534;
+      --accent-hover: #14532d;
+      --answer-bg: #0d1117;
+      --answer-text: #e6edf3;
+      --sidebar-w: min(360px, 32vw);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--page-bg);
+      color: var(--text);
+      line-height: 1.55;
+    }
+    .app {
+      display: flex;
+      min-height: 100vh;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    @media (max-width: 900px) {
+      .app { flex-direction: column; }
+      :root { --sidebar-w: 100%; }
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      padding: 28px 22px 32px;
+      border-right: 1px solid var(--border);
+      background: linear-gradient(180deg, #f4f5f7 0%, var(--page-bg) 100%);
+    }
+    .sidebar-kicker {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      margin: 0 0 8px;
+    }
+    .sidebar h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin: 0 0 14px;
+      line-height: 1.35;
+      color: var(--text);
+    }
+    .sidebar-desc {
+      font-size: 0.9rem;
+      color: var(--muted);
+      margin: 0 0 24px;
+    }
+    .examples-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin: 0 0 10px;
+    }
+    .example-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+      font-size: 0.88rem;
+      color: var(--text);
+      cursor: pointer;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .example-card:hover {
+      border-color: var(--accent);
+      box-shadow: 0 2px 8px rgba(22, 101, 52, 0.12);
+    }
+    .example-card:active { transform: scale(0.99); }
+
+    /* Main */
+    .main {
+      flex: 1;
+      min-width: 0;
+      padding: 24px 28px 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 22px 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .panel h2 {
+      margin: 0 0 18px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+    }
+    .panel h2 span.zh {
+      font-size: 1rem;
+      letter-spacing: 0;
+      color: var(--text);
+      display: block;
+      margin-top: 4px;
+    }
+
+    label.field {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    textarea.query-input {
+      width: 100%;
+      min-height: 120px;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 15px;
+      resize: vertical;
+      font-family: inherit;
+    }
+    textarea:focus, input:focus { outline: none; border-color: var(--accent); }
+
+    .upload-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: flex-start;
+      margin-top: 4px;
+    }
+    .upload-controls { flex: 1; min-width: 200px; }
+    input[type="file"] { font-size: 0.85rem; margin-top: 6px; }
+    .preview-wrap {
+      width: 100%;
+      max-width: 280px;
+      min-height: 140px;
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      background: #f8f9fa;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .preview-wrap img {
+      max-width: 100%;
+      max-height: 200px;
+      object-fit: contain;
+    }
+    .preview-placeholder {
+      color: var(--muted);
+      font-size: 0.85rem;
+      padding: 16px;
+      text-align: center;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .meta-grid input {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 14px;
+    }
+
+    .options-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px;
+      align-items: center;
+      margin-top: 18px;
+      justify-content: space-between;
+    }
+    .options-row label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      margin: 0;
+    }
+    .options-row input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--accent);
+    }
+    .btn-row {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 20px;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 10px 28px;
+      font-size: 15px;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    .status-line {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-top: 10px;
+      min-height: 1.2em;
+    }
+    .status-line.err { color: #b91c1c; }
+    .status-line.ok { color: var(--accent); }
+
+    /* Answer */
+    .answer-panel h2 span.zh { font-size: 1.05rem; }
+    .answer-dark {
+      background: var(--answer-bg);
+      color: var(--answer-text);
+      border-radius: 10px;
+      padding: 20px 22px;
+      min-height: 160px;
+      font-size: 15px;
+      line-height: 1.65;
+    }
+    .answer-dark :is(h1, h2, h3) { margin-top: 1em; margin-bottom: 0.5em; color: #fff; }
+    .answer-dark h1 { font-size: 1.25rem; }
+    .answer-dark h2 { font-size: 1.1rem; }
+    .answer-dark h3 { font-size: 1rem; }
+    .answer-dark h3:first-child { margin-top: 0; }
+    .answer-dark p { margin: 0.6em 0; }
+    .answer-dark code { background: #21262d; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+    .answer-dark pre { background: #161b22; padding: 12px; border-radius: 6px; overflow: auto; }
+    .answer-dark a { color: #58a6ff; }
+    .answer-dark.empty { color: #8b949e; font-style: italic; }
+    .answer-dark.raw-fallback { white-space: pre-wrap; word-break: break-word; }
+
+    .audio-host { margin-top: 16px; }
+    .audio-host[hidden] { display: none !important; }
+    .voice-player-shell {
+      position: relative;
+      border-radius: 12px;
+      padding: 10px 12px 12px;
+      max-width: 560px;
+      background: #161b22;
+      border: 1px solid #30363d;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+    .voice-player-shell .voice-player-label {
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #8b949e;
+      letter-spacing: 0.02em;
+    }
+    .voice-player-shell .msg-audio {
+      display: block;
+      width: 100%;
+      min-height: 44px;
+    }
+    .voice-play-overlay {
+      position: absolute;
+      inset: 0;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(13, 17, 23, 0.55);
+      transition: opacity 0.2s ease, visibility 0.2s ease;
+      z-index: 2;
+    }
+    .voice-play-overlay:hover { background: rgba(13, 148, 136, 0.22); }
+    .voice-play-overlay:focus-visible { outline: 2px solid #0d9488; outline-offset: 2px; }
+    .voice-play-overlay.is-hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    .voice-play-circle {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #14b8a6, #0d9488);
+      box-shadow: 0 4px 24px rgba(13, 148, 136, 0.35), 0 0 0 3px rgba(255, 255, 255, 0.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .voice-play-overlay:active .voice-play-circle { transform: scale(0.94); }
+    .voice-play-circle svg { margin-left: 4px; }
+    .voice-tts-err { font-size: 12px; color: #b91c1c; margin-top: 8px; }
+
+    details.planner-debug {
+      margin-top: 16px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      background: #f8f9fa;
+    }
+    details.planner-debug summary {
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: var(--text);
+    }
+    details.planner-debug pre {
+      margin: 12px 0 0;
+      padding: 12px;
+      background: var(--answer-bg);
+      color: var(--answer-text);
+      border-radius: 6px;
+      font-size: 12px;
+      overflow: auto;
+      max-height: 360px;
+    }
+
+    footer.hint {
+      margin-top: 12px;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    footer.hint a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <p class="sidebar-kicker">PATIENT AGENT</p>
+      <h1>面向患者信息检索的 Query 页面</h1>
+      <p class="sidebar-desc">
+        须填写 11 位手机号（必填，示例见占位符）。输入自然语言问题，可选上传图片。查看模型回答、结构化检索结果；下方「声音选择」选「无」则不生成语音。勾选「Planner 调试」可额外请求 ReAct 规划轨迹（与主问答并行，耗时更长）。
+      </p>
+      <p class="examples-title">示例问题</p>
+      <div class="example-card" data-q="请帮我查询患者 P1001 最近一次就诊的要点。">
+        请帮我查询患者 P1001 最近一次就诊的要点。
+      </div>
+      <div class="example-card" data-q="我是 P1001，请总结我最近一次心内科复诊的重点，并给出用药提醒。">
+        我是 P1001，请总结我最近一次心内科复诊的重点，并给出用药提醒。
+      </div>
+      <div class="example-card" data-q="请结合上传的图片判断这是否为患者最近的检查资料，并提取要点。">
+        请结合上传的图片判断这是否为患者最近的检查资料，并提取要点。
+      </div>
+      <p class="examples-title" style="margin-top:20px">其他页面</p>
+      <div class="example-card" style="border-style:dashed;background:#ecfdf5;border-color:#a7f3d0" onclick="location.href='/test/patient_app.html'">
+        <strong>统一页面</strong>（Query + 聊天 Tab）<br />
+        <span style="font-size:0.82rem;color:var(--muted)">/test/patient_app.html</span>
+      </div>
+      <div class="example-card" style="border-style:dashed" onclick="location.href='/test/patient_chat.html'">
+        <strong>仅聊天</strong> — 多轮对话<br />
+        <span style="font-size:0.82rem;color:var(--muted)">/test/patient_chat.html</span>
+      </div>
+      <p class="examples-title" style="margin-top:16px">访问</p>
+      <p class="sidebar-desc" style="margin:0;font-size:0.85rem">
+        本页：<code>/test/patient_query.html</code><br />
+        需先启动 API（如 <code>uvicorn backend.main:app --port 8000</code>）。
+      </p>
+    </aside>
+
+    <main class="main">
+      <section class="panel">
+        <h2><span class="zh">查询配置 · 发起查询</span></h2>
+
+        <label class="field" for="query">问题内容</label>
+        <textarea id="query" class="query-input" placeholder="输入自然语言问题…">我是 P1001，请总结我最近一次心内科复诊的重点，并给出用药提醒。</textarea>
+
+        <label class="field" style="margin-top:16px">上传图片（可选）</label>
+        <div class="upload-row">
+          <div class="upload-controls">
+            <input type="file" id="image_file" accept="image/*" />
+            <label class="field" for="image_url" style="margin-top:12px">或 公网图片 URL</label>
+            <input type="text" id="image_url" placeholder="https://..." style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px" />
+          </div>
+          <div class="preview-wrap" id="previewWrap">
+            <span class="preview-placeholder" id="previewPh">未选择图片</span>
+            <img id="previewImg" alt="" hidden />
+          </div>
+        </div>
+
+        <div class="meta-grid">
+          <div>
+            <label class="field" for="patient_code">患者编号</label>
+            <input type="text" id="patient_code" placeholder="例如 P1001" autocomplete="off" />
+          </div>
+          <div>
+            <label class="field" for="phone">手机号（11 位，必填）</label>
+            <input type="text" id="phone" placeholder="例如 13800000001" inputmode="numeric" autocomplete="off" />
+          </div>
+          <div>
+            <label class="field" for="session_id">会话 ID（选填，多轮记忆时请自行填写并保持一致）</label>
+            <input type="text" id="session_id" placeholder="默认不填则不写入短期会话" autocomplete="off" />
+          </div>
+        </div>
+
+        <div class="options-row">
+          <label><input type="checkbox" id="planner_debug" /> 显示 Planner 调试信息</label>
+        </div>
+
+        <label class="field" for="ttsVoice" style="margin-top:14px">声音选择（选「无」则不生成语音）</label>
+        <select id="ttsVoice" style="width:100%;max-width:520px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff">
+          <option value="none" selected>无（不播报）</option>
+          <optgroup label="CosyVoice 预置（与控制台名称一致）">
+            <option value="longanyang">龙安洋 · 阳光大男孩</option>
+            <option value="longanhuan">龙安欢 · 欢脱元气女</option>
+            <option value="longxiaochun_v3">龙小淳 · 知性积极女</option>
+            <option value="longxiaoxia_v3">龙小夏 · 沉稳权威女</option>
+            <option value="longyumi_v3">YUMI · 正经青年女</option>
+            <option value="longanwen_v3">龙安温 · 优雅知性女</option>
+            <option value="longanli_v3">龙安莉 · 利落从容女</option>
+            <option value="longanyun_v3">龙安昀 · 居家暖男</option>
+          </optgroup>
+          <optgroup label="Qwen 系统音色">
+            <option value="Cherry">芊悦 Cherry · 阳光积极女</option>
+            <option value="Serena">苏瑶 Serena · 温柔女</option>
+            <option value="Ethan">晨煦 Ethan · 阳光温暖男</option>
+            <option value="Chelsie">千雪 Chelsie · 二次元女友</option>
+            <option value="Maia">四月 Maia · 知性温柔女</option>
+            <option value="Katerina">卡捷琳娜 Katerina · 御姐女</option>
+          </optgroup>
+        </select>
+
+        <div class="btn-row">
+          <button type="button" class="btn-primary" id="btnRun">开始查询</button>
+        </div>
+        <p class="status-line" id="status"></p>
+      </section>
+
+      <section class="panel answer-panel">
+        <h2><span class="zh">回答结果</span></h2>
+        <div class="answer-dark empty" id="answerOut">等待查询…</div>
+        <div id="audioHost" class="audio-host" hidden></div>
+        <details class="planner-debug" id="plannerBox" hidden>
+          <summary>规划器调试信息</summary>
+          <pre id="plannerPre"></pre>
+        </details>
+        <details class="planner-debug" id="rawBox">
+          <summary>原始响应数据</summary>
+          <pre id="rawPre"></pre>
+        </details>
+      </section>
+
+      <footer class="hint">
+        <a href="/test/patient_chat.html">交互式聊天</a>
+        ·
+        <a href="/docs">Swagger /docs</a>
+        ·
+        <a href="/test/agent_query.html">精简版 agent_query</a>
+        ·
+        <a href="/test/memory_chat_test.html">短期记忆测试</a>
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const apiBase = "";
+
+    const TOOL_NAME_ZH = {
+      "case.query_cases": "病例查询",
+      "visit.query_visits": "就诊记录查询",
+      "auth.verify_identity": "身份核验",
+      "identity.request_verification": "待核验身份",
+      "agent.greeting": "问候",
+    };
+    function toolNameZh(name) {
+      return TOOL_NAME_ZH[name] || name;
+    }
+
+    const TTS_VOICE_LABEL = {
+      none: "无（不播报）",
+      longanyang: "龙安洋 · 阳光大男孩",
+      longanhuan: "龙安欢 · 欢脱元气女",
+      longxiaochun_v3: "龙小淳 · 知性积极女",
+      longxiaoxia_v3: "龙小夏 · 沉稳权威女",
+      longyumi_v3: "YUMI · 正经青年女",
+      longanwen_v3: "龙安温 · 优雅知性女",
+      longanli_v3: "龙安莉 · 利落从容女",
+      longanyun_v3: "龙安昀 · 居家暖男",
+      Cherry: "芊悦 Cherry · 阳光积极女",
+      Serena: "苏瑶 Serena · 温柔女",
+      Ethan: "晨煦 Ethan · 阳光温暖男",
+      Chelsie: "千雪 Chelsie · 二次元女友",
+      Maia: "四月 Maia · 知性温柔女",
+      Katerina: "卡捷琳娜 Katerina · 御姐女",
+    };
+
+    function ttsWantsAudio() {
+      const v = $("ttsVoice").value;
+      return v && v !== "none";
+    }
+
+    function ttsVoiceDisplay(apiId) {
+      const id = String(apiId || "").trim();
+      if (!id || id === "none") return TTS_VOICE_LABEL.none || "无（不播报）";
+      const lb = TTS_VOICE_LABEL[id];
+      return lb ? lb + "（" + id + "）" : id;
+    }
+
+    const TTS_VOICE_STORAGE = "patient_query_tts_voice_v1";
+    function saveTtsVoicePref() {
+      try {
+        localStorage.setItem(TTS_VOICE_STORAGE, $("ttsVoice").value);
+      } catch (_) {}
+    }
+    function loadTtsVoicePref() {
+      try {
+        let v = localStorage.getItem(TTS_VOICE_STORAGE);
+        if (v == null) return;
+        if (v === "") v = "none";
+        const sel = $("ttsVoice");
+        if (Array.from(sel.options).some((o) => o.value === v)) sel.value = v;
+      } catch (_) {}
+    }
+
+    function pickAnswer(j) {
+      if (j.multimodal_answer) return j.multimodal_answer;
+      if (j.answer != null && j.answer !== "") return j.answer;
+      if (j.retrieval_answer) return j.retrieval_answer;
+      return "";
+    }
+
+    function resolveAudioUrl(au) {
+      const s = String(au || "").trim();
+      if (!s) return "";
+      if (s.startsWith("http://") || s.startsWith("https://")) return s;
+      const base = String(apiBase || "").replace(/\/$/, "");
+      return (base || "") + (s.startsWith("/") ? s : "/" + s);
+    }
+
+    function mountVoicePlayer(hostEl, audioUrl) {
+      if (!hostEl || !audioUrl) return null;
+      hostEl.innerHTML = "";
+      const shell = document.createElement("div");
+      shell.className = "voice-player-shell";
+      const label = document.createElement("div");
+      label.className = "voice-player-label";
+      label.textContent = "语音播报";
+      shell.appendChild(label);
+      const audio = document.createElement("audio");
+      audio.className = "msg-audio";
+      audio.controls = true;
+      audio.preload = "auto";
+      audio.src = resolveAudioUrl(audioUrl);
+      const overlay = document.createElement("button");
+      overlay.type = "button";
+      overlay.className = "voice-play-overlay";
+      overlay.setAttribute("aria-label", "播放语音播报");
+      overlay.innerHTML =
+        '<span class="voice-play-circle" aria-hidden="true">' +
+        '<svg width="28" height="28" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>' +
+        "</span>";
+      function syncOverlay() {
+        overlay.classList.toggle("is-hidden", !audio.paused);
+      }
+      audio.addEventListener("play", syncOverlay);
+      audio.addEventListener("pause", syncOverlay);
+      audio.addEventListener("ended", syncOverlay);
+      syncOverlay();
+      overlay.addEventListener("click", () => {
+        audio.play().catch(() => {});
+      });
+      shell.appendChild(audio);
+      shell.appendChild(overlay);
+      hostEl.appendChild(shell);
+      hostEl.hidden = false;
+      return audio;
+    }
+
+    function clearVoiceHost(hostEl) {
+      if (!hostEl) return;
+      hostEl.innerHTML = "";
+      hostEl.hidden = true;
+    }
+
+    function renderAnswer(text) {
+      const el = $("answerOut");
+      if (!text || !text.trim()) {
+        el.className = "answer-dark empty";
+        el.textContent = "（暂无文本内容）";
+        return;
+      }
+      el.className = "answer-dark";
+      if (typeof marked !== "undefined" && marked.parse) {
+        try {
+          el.innerHTML = marked.parse(text, { breaks: true });
+          return;
+        } catch (_) {}
+      }
+      el.className = "answer-dark raw-fallback";
+      el.textContent = text;
+    }
+
+    $("image_file").addEventListener("change", () => {
+      const f = $("image_file").files && $("image_file").files[0];
+      const img = $("previewImg");
+      const ph = $("previewPh");
+      if (!f) {
+        img.hidden = true;
+        ph.hidden = false;
+        ph.textContent = "未选择图片";
+        return;
+      }
+      ph.hidden = true;
+      img.hidden = false;
+      img.src = URL.createObjectURL(f);
+    });
+
+    document.querySelectorAll(".example-card").forEach((card) => {
+      card.addEventListener("click", () => {
+        $("query").value = card.getAttribute("data-q") || "";
+      });
+    });
+
+    function isPhone11(v) {
+      return /^1\d{10}$/.test(String(v || "").trim());
+    }
+
+    $("btnRun").onclick = async () => {
+      const q = $("query").value.trim();
+      if (!q) {
+        $("status").textContent = "请填写问题内容";
+        $("status").className = "status-line err";
+        return;
+      }
+      const ph0 = $("phone").value.trim();
+      if (!isPhone11(ph0)) {
+        $("status").textContent = "请填写 11 位手机号（必填，示例见占位符）";
+        $("status").className = "status-line err";
+        return;
+      }
+      const btn = $("btnRun");
+      btn.disabled = true;
+      $("status").textContent = "请求中…";
+      $("status").className = "status-line";
+      $("rawPre").textContent = "";
+      $("plannerPre").textContent = "";
+      $("plannerBox").hidden = true;
+      clearVoiceHost($("audioHost"));
+
+      const fd = new FormData();
+      fd.append("query", q);
+      const pc = $("patient_code").value.trim();
+      if (pc) fd.append("patient_code", pc);
+      fd.append("phone", $("phone").value.trim());
+      const sid = $("session_id").value.trim();
+      if (sid) fd.append("session_id", sid);
+      fd.append("tts_voice", $("ttsVoice").value.trim());
+      const iu = $("image_url").value.trim();
+      if (iu) fd.append("image_url", iu);
+      const file = $("image_file").files && $("image_file").files[0];
+      if (file) fd.append("image_file", file);
+
+      const wantPlanner = $("planner_debug").checked;
+      const plannerPromise = wantPlanner
+        ? fetch(apiBase + "/api/agent/react-plan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_query: q,
+              context: {
+                patient_code: pc || undefined,
+                phone: ph0,
+              },
+            }),
+          }).then((r) => r.json())
+        : Promise.resolve(null);
+
+      try {
+        const r = await fetch(apiBase + "/api/agent/query-multimodal", {
+          method: "POST",
+          body: fd,
+        });
+        const text = await r.text();
+        let j;
+        try {
+          j = JSON.parse(text);
+        } catch {
+          $("status").textContent = "请求失败（状态码 " + r.status + "，响应非 JSON）";
+          $("status").className = "status-line err";
+          renderAnswer(text.slice(0, 8000));
+          $("rawPre").textContent = text;
+          return;
+        }
+        $("rawPre").textContent = JSON.stringify(j, null, 2);
+        if (!r.ok) {
+          $("status").textContent = "请求失败（状态码 " + r.status + "）" + (j.detail ? " " + JSON.stringify(j.detail) : "");
+          $("status").className = "status-line err";
+          renderAnswer(typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail || j, null, 2));
+          return;
+        }
+        $("status").textContent =
+          "完成 · 工具：" +
+          toolNameZh(j.tool_name || "—") +
+          " · 音色：" +
+          ttsVoiceDisplay(j.tts_voice);
+        $("status").className = "status-line ok";
+        renderAnswer(pickAnswer(j));
+
+        clearVoiceHost($("audioHost"));
+        const au = j.audio_url;
+        if (ttsWantsAudio() && j.audio_error && !au) {
+          const err = document.createElement("div");
+          err.className = "voice-tts-err";
+          err.textContent = "语音未生成：" + j.audio_error;
+          $("audioHost").appendChild(err);
+          $("audioHost").hidden = false;
+        }
+        if (au && ttsWantsAudio()) {
+          mountVoicePlayer($("audioHost"), au);
+        }
+
+        if (wantPlanner) {
+          $("plannerBox").hidden = false;
+          try {
+            const pr = await plannerPromise;
+            $("plannerPre").textContent = JSON.stringify(pr, null, 2);
+          } catch (e) {
+            $("plannerPre").textContent = String(e);
+          }
+        }
+      } catch (e) {
+        $("status").textContent = String(e);
+        $("status").className = "status-line err";
+        renderAnswer(String(e));
+      } finally {
+        btn.disabled = false;
+      }
+    };
+
+    $("ttsVoice").addEventListener("change", saveTtsVoicePref);
+    loadTtsVoicePref();
+  </script>
+</body>
+</html>

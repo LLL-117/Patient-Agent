@@ -1,0 +1,178 @@
+# Patient Agent 项目说明
+
+医疗场景下的患者 Agent 后端原型：结构化病历（患者、病例、就诊）、分层记忆（会话、关键事件、画像、向量检索）、多模态问答与可选语音合成；技术栈为 **FastAPI + SQLite**，大模型与向量等能力通过 **阿里云 DashScope** 兼容接口调用。
+
+---
+
+## 一、项目如何启动
+
+### 1. 环境要求
+
+- **Python**：建议 3.10 或 3.11（与当前开发环境一致即可）。
+- **操作系统**：Windows / Linux / macOS 均可；下文命令以在项目根目录执行为准。
+
+### 2. 安装依赖
+
+项目未附带 `requirements.txt`，请至少安装以下包（版本可与现有环境兼容即可）：
+
+```bash
+pip install "uvicorn[standard]" fastapi pydantic starlette dashscope
+```
+
+说明：
+
+- **FastAPI / Uvicorn / Starlette / Pydantic**：Web 服务与接口。
+- **dashscope**：调用通义兼容接口（对话、向量、多模态、CosyVoice TTS 等）；未配置 API Key 时部分功能会降级或返回明确错误，但服务仍可启动。
+
+语音合成若走 CosyVoice WebSocket，还需确保 **dashscope** 版本较新（含 `dashscope.audio.tts_v2`）。
+
+### 3. 环境变量（按需）
+
+| 变量 | 作用 |
+|------|------|
+| `QWEN_API_KEY` | 主 API Key（与下方二选一或共用） |
+| `DASHSCOPE_API_KEY` | 部分接口优先读取；未设时多处回退到 `QWEN_API_KEY` |
+| `LOG_LEVEL` | 日志级别，默认 `INFO` |
+| `LOG_HTTP` | 设为 `1` 时打印 HTTP 访问日志 |
+| `TTS_ENABLED` | 设为 `false` / `0` 等可全局关闭服务端 TTS |
+| `QWEN_TTS_MODEL` / `COSYVOICE_TTS_MODEL` 等 | 详见代码内默认值与注释 |
+
+数据库路径由 `patient_db` 决定：默认在**项目根目录**下自动创建 `data/`，首次启动会建库。
+
+### 4. 启动主应用（必选）
+
+在**仓库根目录**（包含 `backend` 包与本文 `README.md` 的目录）执行：
+
+```bash
+python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+常用验证：
+
+- 健康检查：<http://127.0.0.1:8000/health>，应返回 `{"status":"ok"}`。
+- OpenAPI 文档：<http://127.0.0.1:8000/docs>。
+- 静态联调页（挂载在 `/test`）：例如统一入口 <http://127.0.0.1:8000/test/patient_app.html>。
+
+### 5. 可选：独立 MCP 服务
+
+若需单独调试 MCP 风格工具列表、invoke、ReAct 等，可在**同一仓库根目录**另起进程（端口示例 `8100`）：
+
+```bash
+python -m uvicorn backend.mcp_server:app --reload --host 127.0.0.1 --port 8100
+```
+
+文档与示例见 `backend/MCP_QUICKSTART.md`。
+
+### 6. 可选：种子数据
+
+若仓库内提供 `seed_data.py`、`batch_seed_all_patients.py` 等脚本，可在配置好 Python 路径后于根目录执行（具体参数以脚本内说明为准），用于写入演示患者与就诊数据。
+
+---
+
+## 二、项目目录结构
+
+### 2.1 仓库根目录一览
+
+```text
+<项目根目录>/                    # 启动 uvicorn 时的工作目录（须能 import backend）
+├── README.md                    # 项目说明（启动方式 + 目录结构）
+├── tetris.html                  # 与主项目无关的独立静态页（若有）；可忽略
+│
+├── backend/                     # Python 包：全部业务与 Agent 代码
+│   ├── __init__.py              # 包标识
+│   ├── main.py                  # FastAPI 主应用
+│   ├── agent_module.py
+│   ├── patient_db.py
+│   ├── memory_extract.py
+│   ├── memory_vector.py
+│   ├── session_media.py
+│   ├── react_api.py
+│   ├── react_planner.py
+│   ├── mcp_server.py
+│   ├── seed_data.py
+│   ├── batch_seed_all_patients.py
+│   ├── convert_batch_data_to_cn.py
+│   ├── convert_raw_json_plan_to_cn.py
+│   ├── PROJECT_INTERVIEW_GUIDE.md
+│   ├── MCP_QUICKSTART.md
+│   ├── static/                  # 浏览器联调页（挂载路径 /test）
+│   │   ├── patient_app.html
+│   │   ├── patient_query.html
+│   │   ├── patient_chat.html
+│   │   ├── agent_query.html
+│   │   ├── patient_test.html
+│   │   ├── memory_chat_test.html
+│   │   └── session_memory_view.html
+│   ├── audio_cache/             # 【运行时生成】TTS 生成的音频文件
+│   ├── session_image_cache/     # 【运行时生成】会话内上传图片落盘
+│   └── .idea/                   # JetBrains IDE 工程文件（可选，勿当作业务代码）
+│
+└── data/                        # 【运行时生成】SQLite 等业务数据目录
+    └── patient_agent.db         # 默认数据库文件名（首次访问时创建）
+```
+
+> **路径约定**：`patient_db` 将库文件放在**项目根目录**下的 `data/patient_agent.db`；`agent_module` 将 TTS 与上传图放在 `backend/audio_cache`、`backend/session_image_cache`。
+
+---
+
+### 2.2 `backend/` 核心 Python 模块
+
+| 文件 | 职责摘要 |
+|------|-----------|
+| `main.py` | 创建 `FastAPI` 实例；注册中间件；挂载 `StaticFiles`（`/test` → `backend/static`）；注册 `agent_router`、`react_router`；实现患者/病例/就诊的 REST、记忆设置、记忆抽取、向量重建与检索等 HTTP 接口。 |
+| `agent_module.py` | Agent 路由：`POST /api/agent/query-multimodal`（文本+可选图+可选 TTS）；纯问候语短路；病历检索结果与长期记忆块合并；Qwen 多模态与 Qwen-TTS / CosyVoice TTS；会话图片落盘与 `GET /api/agent/session-image/{id}`、`GET /api/agent/audio/{id}`。 |
+| `patient_db.py` | `PatientDatabase`：SQLite 连接、表初始化；患者/病例/就诊 CRUD；`memory_*` 相关表（会话、关键事件、画像、偏好、向量块）；用户画像键名中英文规范化合并。 |
+| `memory_extract.py` | 调用 DashScope 对「对话」或「业务摘要」做 JSON 抽取：关键事件 + 用户画像；供 `main` 中抽取接口使用。 |
+| `memory_vector.py` | 文本 embedding、关键事件入向量表；FTS5 全文；`hybrid_search` 等混合检索，供 Agent 上下文组装使用。 |
+| `session_media.py` | 拼装会话消息中的 Markdown 后缀（图片链接、语音链接等），避免正文塞满 base64。 |
+| `react_api.py` | 对外暴露 ReAct / 规划类路由（内部复用 `mcp_server.MCPToolbox` 等）。 |
+| `react_planner.py` | ReAct 规划与自洽等多步推理逻辑（HTTP 由 `react_api` 转发）。 |
+| `mcp_server.py` | 独立可启动的 FastAPI：MCP 风格 `tools` / `invoke`、轻量路由与 `agent-react`；与主应用数据模型思路一致，进程独立。 |
+| `seed_data.py` | 单患者或演示数据写入脚本入口（按脚本内用法执行）。 |
+| `batch_seed_all_patients.py` | 批量导入/种子患者数据脚本。 |
+| `convert_batch_data_to_cn.py` | 批量数据转中文/结构化落库辅助脚本。 |
+| `convert_raw_json_plan_to_cn.py` | 原始 JSON 计划转中文等转换脚本。 |
+
+---
+
+### 2.3 `backend/static/` 静态联调页
+
+主服务启动后，浏览器访问 **`http://<host>:<port>/test/<文件名>`**（注意 `main` 将静态目录挂在 `/test`，无默认 `index.html` 时需写全文件名）。
+
+| 文件 | 用途简述 |
+|------|-----------|
+| `patient_app.html` | **推荐主入口**：侧栏切换「Query 页面 / 聊天页面」；患者编号、手机号、会话 ID、声音选择（无=不播报）；调用 `query-multimodal`。 |
+| `patient_query.html` | 仅自然语言 Query + 可选图；Planner 调试可选。 |
+| `patient_chat.html` | 仅多轮聊天；顶栏配置与主应用类似。 |
+| `agent_query.html` | 精简版多模态请求页，字段较少。 |
+| `patient_test.html` | **纯 REST 联调**：Upsert 患者、写病例、写就诊、按 ID/编号读回；不经过 Agent。 |
+| `memory_chat_test.html` | 最小请求体调用 `query-multimodal`，便于看返回 JSON。 |
+| `session_memory_view.html` | 查看/渲染会话记忆、语音与图片引用等（按页面实现为准）。 |
+
+---
+
+### 2.4 运行时与数据目录
+
+| 路径 | 内容 |
+|------|------|
+| `data/patient_agent.db` | 默认 SQLite：患者主数据、病例、就诊、会话记忆、关键事件、画像、向量、FTS 等；**删除前请备份**。 |
+| `backend/audio_cache/` | TTS 返回给前端的音频以文件形式缓存，通过 `/api/agent/audio/{audio_id}` 提供。 |
+| `backend/session_image_cache/` | 用户经多模态表单上传的图片落盘，会话正文内用短链引用。 |
+
+---
+
+### 2.5 文档与其它
+
+| 路径 | 说明 |
+|------|------|
+| `backend/PROJECT_INTERVIEW_GUIDE.md` | 架构、记忆分层、接口索引、面试表述等**长篇说明**，适合深入阅读。 |
+| `backend/MCP_QUICKSTART.md` | 独立 MCP 进程启动、工具列表与调用示例。 |
+| `backend/.idea/` | IDE 配置；不参与运行，团队开发时可加入 `.gitignore`。 |
+
+---
+
+### 2.6 小结
+
+- **无前端构建链路**：联调依赖 `backend/static` 下 HTML + 浏览器直连 API。
+- **单进程主服务**即可覆盖病历 CRUD + Agent + 记忆；**MCP** 为可选第二进程。
+- 更细的 **REST 路径列表、记忆表字段、环境变量全集** 以 `PROJECT_INTERVIEW_GUIDE.md` 与源码为准。

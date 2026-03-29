@@ -1,0 +1,1173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Patient Agent</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    :root {
+      --cream: #f9f7f2;
+      --cream-dark: #f0ebe3;
+      --card: #ffffff;
+      --text: #1a1a1a;
+      --muted: #5c5c5c;
+      --border: #e5e0d8;
+      --teal: #0d9488;
+      --green: #136c5e;
+      --green-hover: #0f5a4f;
+      --example-bg: #ecfdf5;
+      --example-border: #a7f3d0;
+      --answer-bg: #0d1117;
+      --answer-text: #e6edf3;
+      --sidebar-w: min(380px, 34vw);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--cream);
+      color: var(--text);
+      line-height: 1.55;
+    }
+    .app {
+      display: flex;
+      min-height: 100vh;
+      max-width: 1440px;
+      margin: 0 auto;
+    }
+    @media (max-width: 920px) {
+      .app { flex-direction: column; }
+      :root { --sidebar-w: 100%; }
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      padding: 24px 20px 32px;
+      border-right: 1px solid var(--border);
+      background: linear-gradient(165deg, #fffefb 0%, var(--cream) 55%, var(--cream-dark) 100%);
+    }
+
+    .tab-switch {
+      display: inline-flex;
+      padding: 4px;
+      background: rgba(19, 108, 94, 0.08);
+      border-radius: 999px;
+      margin-bottom: 20px;
+      border: 1px solid rgba(19, 108, 94, 0.15);
+    }
+    .tab-switch button {
+      border: none;
+      background: transparent;
+      padding: 8px 18px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--muted);
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .tab-switch button:hover { color: var(--green); }
+    .tab-switch button.active {
+      background: #fff;
+      color: var(--green);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+
+    .sidebar-kicker {
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      color: var(--teal);
+      margin: 0 0 8px;
+    }
+    .sidebar h1 {
+      font-size: 1.28rem;
+      font-weight: 700;
+      margin: 0 0 12px;
+      line-height: 1.35;
+    }
+    .sidebar-desc {
+      font-size: 0.9rem;
+      color: var(--muted);
+      margin: 0 0 20px;
+    }
+
+    .examples-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin: 0 0 10px;
+    }
+    .example-card {
+      background: var(--example-bg);
+      border: 1px solid var(--example-border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+      font-size: 0.86rem;
+      cursor: pointer;
+      transition: box-shadow 0.15s, transform 0.1s;
+    }
+    .example-card:hover {
+      box-shadow: 0 2px 10px rgba(19, 108, 94, 0.12);
+    }
+    .example-card:active { transform: scale(0.99); }
+
+    .shared-fields {
+      margin-top: 8px;
+      padding-top: 16px;
+      border-top: 1px dashed var(--border);
+    }
+    .shared-fields label {
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-top: 10px;
+    }
+    .shared-fields input {
+      width: 100%;
+      margin-top: 4px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    .shared-fields input:focus {
+      outline: none;
+      border-color: var(--green);
+    }
+    .btn-mini {
+      margin-top: 10px;
+      padding: 6px 12px;
+      font-size: 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+      cursor: pointer;
+    }
+    .btn-mini:hover { border-color: var(--green); color: var(--green); }
+
+    .sidebar-foot {
+      margin-top: 20px;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    .sidebar-foot code { font-size: 0.85em; background: rgba(0,0,0,0.04); padding: 2px 5px; border-radius: 4px; }
+
+    /* Main */
+    .main {
+      flex: 1;
+      min-width: 0;
+      padding: 22px 26px 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .main-view { display: none; flex-direction: column; gap: 18px; flex: 1; min-height: 0; }
+    .main-view.active { display: flex; }
+
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px 22px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+    }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .panel-head h2 {
+      margin: 0;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      color: var(--teal);
+    }
+    .panel-head h2 .zh {
+      display: block;
+      font-size: 1.05rem;
+      letter-spacing: 0;
+      color: var(--text);
+      margin-top: 4px;
+    }
+    .badge {
+      flex-shrink: 0;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #eef2f0;
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    .badge.busy { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
+    .badge.ok { background: #ecfdf5; color: var(--green); border-color: #a7f3d0; }
+    .badge.err { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+
+    label.field {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    textarea.query-input {
+      width: 100%;
+      min-height: 112px;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 15px;
+      resize: vertical;
+      font-family: inherit;
+      background: #fffefb;
+    }
+    textarea:focus, input:focus, select:focus { outline: none; border-color: var(--green); }
+
+    .toolbar-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      align-items: flex-end;
+      margin-top: 14px;
+    }
+    .toolbar-row .grow { flex: 1; min-width: 160px; }
+    .toolbar-row label { font-size: 0.78rem; color: var(--muted); display: block; margin-bottom: 4px; }
+    .toolbar-row input[type="file"] { font-size: 0.82rem; max-width: 220px; }
+    .toolbar-row select {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      background: #fff;
+    }
+
+    .preview-wrap {
+      width: 100%;
+      max-width: 300px;
+      min-height: 132px;
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      background: var(--cream);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .preview-wrap img { max-width: 100%; max-height: 200px; object-fit: contain; }
+    .preview-placeholder { color: var(--muted); font-size: 0.85rem; padding: 12px; text-align: center; }
+
+    .options-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-top: 14px;
+      align-items: center;
+    }
+    .options-row label { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; cursor: pointer; margin: 0; }
+    .options-row input[type="checkbox"] { accent-color: var(--green); width: 17px; height: 17px; }
+
+    .btn-row { display: flex; justify-content: flex-end; margin-top: 18px; }
+    .btn-primary {
+      background: var(--green);
+      color: #fff;
+      border: none;
+      padding: 10px 28px;
+      font-size: 15px;
+      font-weight: 600;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    .btn-primary:hover { background: var(--green-hover); }
+    .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    .status-line { font-size: 0.85rem; color: var(--muted); margin-top: 10px; min-height: 1.2em; }
+    .status-line.err { color: #b91c1c; }
+    .status-line.ok { color: var(--green); }
+
+    .answer-dark {
+      background: var(--answer-bg);
+      color: var(--answer-text);
+      border-radius: 10px;
+      padding: 18px 20px;
+      min-height: 140px;
+      font-size: 15px;
+      line-height: 1.65;
+    }
+    .answer-dark :is(h1, h2, h3) { margin-top: 0.8em; color: #fff; }
+    .answer-dark p { margin: 0.5em 0; }
+    .answer-dark code { background: #21262d; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+    .answer-dark pre { background: #161b22; padding: 10px; border-radius: 6px; overflow: auto; font-size: 12px; }
+    .answer-dark.empty { color: #8b949e; font-style: italic; }
+    .answer-dark.raw-fallback { white-space: pre-wrap; word-break: break-word; }
+
+    /* 语音播报：可点击的大播放层 + 原生 controls */
+    .audio-host { margin-top: 12px; }
+    .audio-host[hidden] { display: none !important; }
+    .voice-player-shell {
+      position: relative;
+      border-radius: 12px;
+      padding: 10px 12px 12px;
+      max-width: 560px;
+    }
+    .voice-player-shell.theme-light {
+      background: linear-gradient(180deg, #f1f5f9 0%, #e8eef5 100%);
+      border: 1px solid #cbd5e1;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+    }
+    .voice-player-shell.theme-dark {
+      background: #161b22;
+      border: 1px solid #30363d;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+    .voice-player-shell .voice-player-label {
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      letter-spacing: 0.02em;
+    }
+    .voice-player-shell.theme-light .voice-player-label { color: #475569; }
+    .voice-player-shell.theme-dark .voice-player-label { color: #8b949e; }
+    .voice-player-shell .msg-audio {
+      display: block;
+      width: 100%;
+      min-height: 44px;
+      margin-top: 0;
+    }
+    .voice-play-overlay {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      margin: 0;
+      padding: 0;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.2s ease, visibility 0.2s ease;
+      z-index: 2;
+    }
+    .voice-player-shell.theme-light .voice-play-overlay {
+      background: rgba(248, 250, 252, 0.72);
+    }
+    .voice-player-shell.theme-dark .voice-play-overlay {
+      background: rgba(13, 17, 23, 0.55);
+    }
+    .voice-play-overlay:hover {
+      background: rgba(13, 148, 136, 0.15);
+    }
+    .voice-player-shell.theme-dark .voice-play-overlay:hover {
+      background: rgba(13, 148, 136, 0.22);
+    }
+    .voice-play-overlay:focus-visible {
+      outline: 2px solid var(--teal);
+      outline-offset: 2px;
+    }
+    .voice-play-overlay.is-hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    .voice-play-circle {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #14b8a6, #0d9488);
+      box-shadow: 0 4px 20px rgba(13, 148, 136, 0.45), 0 0 0 4px rgba(255, 255, 255, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.15s ease;
+    }
+    .voice-play-overlay:active .voice-play-circle {
+      transform: scale(0.94);
+    }
+    .voice-play-circle svg {
+      margin-left: 4px;
+    }
+    .voice-tts-err {
+      font-size: 12px;
+      color: #b91c1c;
+      margin-top: 8px;
+    }
+    .answer-panel .voice-player-shell.theme-dark .voice-play-circle {
+      box-shadow: 0 4px 24px rgba(13, 148, 136, 0.35), 0 0 0 3px rgba(255, 255, 255, 0.12);
+    }
+
+    details.planner-debug {
+      margin-top: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: var(--cream);
+    }
+    details.planner-debug summary { cursor: pointer; font-weight: 600; font-size: 0.88rem; }
+    details.planner-debug pre {
+      margin: 10px 0 0;
+      padding: 10px;
+      background: var(--answer-bg);
+      color: var(--answer-text);
+      border-radius: 6px;
+      font-size: 11px;
+      overflow: auto;
+      max-height: 280px;
+    }
+
+    /* Chat */
+    .chat-shell {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+      overflow: hidden;
+    }
+    .chat-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, #fffefb, var(--cream));
+    }
+    .chat-head h2 { margin: 0; font-size: 0.95rem; font-weight: 700; }
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 280px;
+      max-height: min(52vh, 560px);
+    }
+    .msg {
+      max-width: 90%;
+      padding: 11px 14px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.55;
+      word-break: break-word;
+    }
+    .msg.user {
+      align-self: flex-end;
+      background: #d1fae5;
+      border: 1px solid #6ee7b7;
+    }
+    .msg.assistant {
+      align-self: flex-start;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+    }
+    .msg.assistant .meta { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+    .msg.err { border-color: #fecaca; background: #fef2f2; color: #991b1b; }
+    .welcome-chat {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.88rem;
+      padding: 20px;
+    }
+
+    .composer {
+      border-top: 1px solid var(--border);
+      padding: 12px 14px;
+      background: #fffefb;
+    }
+    .composer-row { display: flex; gap: 10px; align-items: flex-end; }
+    .composer textarea {
+      flex: 1;
+      min-height: 44px;
+      max-height: 140px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 15px;
+      font-family: inherit;
+      resize: vertical;
+    }
+    .composer-tools {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+      font-size: 0.78rem;
+      color: var(--muted);
+      align-items: center;
+    }
+    .composer-tools input[type="text"] {
+      flex: 1;
+      min-width: 120px;
+      max-width: 240px;
+      padding: 5px 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 12px;
+    }
+
+    footer.hint {
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    footer.hint a { color: var(--green); }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="tab-switch" role="tablist">
+        <button type="button" id="tabQuery" class="active" role="tab" aria-selected="true">Query 页面</button>
+        <button type="button" id="tabChat" role="tab" aria-selected="false">聊天页面</button>
+      </div>
+
+      <p class="sidebar-kicker">PATIENT AGENT</p>
+      <h1 id="sidebarTitle">面向患者信息检索的 Query 页面</h1>
+      <p class="sidebar-desc" id="sidebarDesc">
+        输入自然语言问题，可选上传图片；查看模型回答与病历检索结果。下方可切换「聊天页面」进行多轮对话（共用同一 session）。
+      </p>
+
+      <div id="blockExamples">
+        <p class="examples-title">示例问题</p>
+        <div class="example-card" data-q="请帮我查询患者 P1001 最近一次就诊的要点。">
+          请帮我查询患者 P1001 最近一次就诊的要点。
+        </div>
+        <div class="example-card" data-q="我是 P1001，请总结我最近一次心内科复诊的重点，并给出用药提醒。">
+          我是 P1001，请总结我最近一次心内科复诊的重点，并给出用药提醒。
+        </div>
+        <div class="example-card" data-q="请结合上传的图片判断这是否为患者最近的检查资料，并提取要点。">
+          请结合上传的图片判断这是否为患者最近的检查资料，并提取要点。
+        </div>
+      </div>
+
+      <div class="shared-fields">
+        <label for="patient_code">患者编号</label>
+        <input type="text" id="patient_code" placeholder="例如 P1001" autocomplete="off" />
+        <label for="phone">手机号（11 位，必填）</label>
+        <input type="text" id="phone" placeholder="例如 13800000001" inputmode="numeric" autocomplete="off" />
+        <label for="session_id">会话 ID（Query 与聊天共用，默认留空；需要多轮记忆时请自行填写）</label>
+        <input type="text" id="session_id" placeholder="不填则本轮不写短期会话" autocomplete="off" />
+        <button type="button" class="btn-mini" id="btnNewSession">新会话 ID</button>
+        <label for="ttsVoice" style="margin-top:4px">声音选择（选「无」则不生成语音）</label>
+        <select id="ttsVoice" style="margin-top:4px;width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:#fff">
+          <option value="none" selected>无（不播报）</option>
+          <optgroup label="CosyVoice 预置（与控制台名称一致）">
+            <option value="longanyang">龙安洋 · 阳光大男孩</option>
+            <option value="longanhuan">龙安欢 · 欢脱元气女</option>
+            <option value="longxiaochun_v3">龙小淳 · 知性积极女</option>
+            <option value="longxiaoxia_v3">龙小夏 · 沉稳权威女</option>
+            <option value="longyumi_v3">YUMI · 正经青年女</option>
+            <option value="longanwen_v3">龙安温 · 优雅知性女</option>
+            <option value="longanli_v3">龙安莉 · 利落从容女</option>
+            <option value="longanyun_v3">龙安昀 · 居家暖男</option>
+          </optgroup>
+          <optgroup label="Qwen 系统音色（voice 英文参数）">
+            <option value="Cherry">芊悦 Cherry · 阳光积极女</option>
+            <option value="Serena">苏瑶 Serena · 温柔女</option>
+            <option value="Ethan">晨煦 Ethan · 阳光温暖男</option>
+            <option value="Chelsie">千雪 Chelsie · 二次元女友</option>
+            <option value="Maia">四月 Maia · 知性温柔女</option>
+            <option value="Katerina">卡捷琳娜 Katerina · 御姐女</option>
+          </optgroup>
+        </select>
+      </div>
+
+      <p class="sidebar-foot">
+        统一入口：<code>/test/patient_app.html</code><br />
+        启动：<code>uvicorn backend.main:app --port 8000</code>
+      </p>
+    </aside>
+
+    <main class="main">
+      <!-- Query view -->
+      <div id="viewQuery" class="main-view active">
+        <section class="panel">
+          <div class="panel-head">
+            <h2><span class="zh">查询配置 · 发起查询</span></h2>
+            <span class="badge" id="appBadge">空闲</span>
+          </div>
+
+          <label class="field" for="query">问题内容</label>
+          <textarea id="query" class="query-input" placeholder="例如：请帮我查询患者 P1001 的病例信息"></textarea>
+
+          <div class="toolbar-row">
+            <div class="grow">
+              <label for="image_file">上传图片</label>
+              <input type="file" id="image_file" accept="image/*" />
+            </div>
+          </div>
+          <div class="toolbar-row" style="margin-top:12px">
+            <div class="preview-wrap" id="previewWrap">
+              <span class="preview-placeholder" id="previewPh">未选择图片</span>
+              <img id="previewImg" alt="" hidden />
+            </div>
+          </div>
+
+          <label class="field" for="image_url" style="margin-top:12px">或 公网图片 URL</label>
+          <input type="text" id="image_url" placeholder="https://..." style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px" />
+
+          <div class="options-row">
+            <label><input type="checkbox" id="planner_debug" /> 显示 Planner 调试信息</label>
+          </div>
+
+          <div class="btn-row">
+            <button type="button" class="btn-primary" id="btnRun">开始查询</button>
+          </div>
+          <p class="status-line" id="status"></p>
+        </section>
+
+        <section class="panel answer-panel">
+          <div class="panel-head">
+            <h2><span class="zh">回答结果</span></h2>
+          </div>
+          <div class="answer-dark empty" id="answerOut">等待查询…</div>
+          <div id="audioHost" class="audio-host" hidden></div>
+          <details class="planner-debug" id="plannerBox" hidden>
+            <summary>规划器调试信息</summary>
+            <pre id="plannerPre"></pre>
+          </details>
+          <details class="planner-debug" id="rawBox">
+            <summary>原始响应数据</summary>
+            <pre id="rawPre"></pre>
+          </details>
+        </section>
+      </div>
+
+      <!-- Chat view -->
+      <div id="viewChat" class="main-view">
+        <div class="chat-shell">
+          <div class="chat-head">
+            <h2>多轮对话</h2>
+            <span class="badge" id="chatBadge">空闲</span>
+          </div>
+          <div id="messages">
+            <p class="welcome-chat" id="welcomeChat">
+              与左侧填写的患者编号、手机号（必填）、会话 ID 一致；每条消息会调用接口并写入短期记忆。侧栏「声音选择」选非「无」时生成本轮语音。
+            </p>
+          </div>
+          <div class="composer">
+            <div class="composer-row">
+              <textarea id="chatInput" placeholder="输入消息… Enter 发送，Shift+Enter 换行" rows="2"></textarea>
+              <button type="button" class="btn-primary" id="btnSend">发送</button>
+            </div>
+            <div class="composer-tools">
+              <span>可选图：</span>
+              <input type="file" id="chat_image_file" accept="image/*" />
+              <span>URL</span>
+              <input type="text" id="chat_image_url" placeholder="https://..." />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <footer class="hint">
+        <a href="/docs">/docs</a>
+        ·
+        <a href="/test/patient_query.html">仅 Query 旧页</a>
+        ·
+        <a href="/test/patient_chat.html">仅聊天旧页</a>
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    const apiBase = "";
+    const STORAGE = "patient_app_v1";
+
+    function $(id) { return document.getElementById(id); }
+
+    const TOOL_NAME_ZH = {
+      "case.query_cases": "病例查询",
+      "visit.query_visits": "就诊记录查询",
+      "auth.verify_identity": "身份核验",
+      "identity.request_verification": "待核验身份",
+      "agent.greeting": "问候",
+    };
+    function toolNameZh(name) {
+      return TOOL_NAME_ZH[name] || name;
+    }
+
+    const TTS_VOICE_LABEL = {
+      none: "无（不播报）",
+      longanyang: "龙安洋 · 阳光大男孩",
+      longanhuan: "龙安欢 · 欢脱元气女",
+      longxiaochun_v3: "龙小淳 · 知性积极女",
+      longxiaoxia_v3: "龙小夏 · 沉稳权威女",
+      longyumi_v3: "YUMI · 正经青年女",
+      longanwen_v3: "龙安温 · 优雅知性女",
+      longanli_v3: "龙安莉 · 利落从容女",
+      longanyun_v3: "龙安昀 · 居家暖男",
+      Cherry: "芊悦 Cherry · 阳光积极女",
+      Serena: "苏瑶 Serena · 温柔女",
+      Ethan: "晨煦 Ethan · 阳光温暖男",
+      Chelsie: "千雪 Chelsie · 二次元女友",
+      Maia: "四月 Maia · 知性温柔女",
+      Katerina: "卡捷琳娜 Katerina · 御姐女",
+    };
+
+    function ttsWantsAudio() {
+      const v = $("ttsVoice").value;
+      return v && v !== "none";
+    }
+
+    function ttsVoiceDisplay(apiId) {
+      const id = String(apiId || "").trim();
+      if (!id || id === "none") return TTS_VOICE_LABEL.none || "无（不播报）";
+      const lb = TTS_VOICE_LABEL[id];
+      return lb ? lb + "（" + id + "）" : id;
+    }
+
+    const COPY = {
+      query: {
+        title: "面向患者信息检索的 Query 页面",
+        desc: "左侧须填写 11 位手机号（必填）。输入自然语言问题，可选上传图片；查看模型回答与病历检索结果。可切换到「聊天页面」多轮对话（共用 session）。",
+      },
+      chat: {
+        title: "交互式聊天",
+        desc: "多轮问答，同一会话 ID 写入短期记忆。手机号必填，与 Query 页共用左侧表单。",
+      },
+    };
+
+    function setBadge(el, state) {
+      el.className = "badge";
+      if (state === "busy") { el.classList.add("busy"); el.textContent = "请求中…"; return; }
+      if (state === "ok") { el.classList.add("ok"); el.textContent = "完成"; return; }
+      if (state === "err") { el.classList.add("err"); el.textContent = "失败"; return; }
+      el.textContent = "空闲";
+    }
+
+    function resolveAudioUrl(au) {
+      const s = String(au || "").trim();
+      if (!s) return "";
+      if (s.startsWith("http://") || s.startsWith("https://")) return s;
+      const base = String(apiBase || "").replace(/\/$/, "");
+      return (base || "") + (s.startsWith("/") ? s : "/" + s);
+    }
+
+    /** theme: "dark"（Query 结果区下方）| "light"（聊天助手气泡内） */
+    function mountVoicePlayer(hostEl, audioUrl, theme) {
+      if (!hostEl || !audioUrl) return null;
+      hostEl.innerHTML = "";
+      const shell = document.createElement("div");
+      shell.className = "voice-player-shell theme-" + (theme === "dark" ? "dark" : "light");
+
+      const label = document.createElement("div");
+      label.className = "voice-player-label";
+      label.textContent = "语音播报";
+      shell.appendChild(label);
+
+      const audio = document.createElement("audio");
+      audio.className = "msg-audio";
+      audio.controls = true;
+      audio.preload = "auto";
+      audio.src = resolveAudioUrl(audioUrl);
+
+      const overlay = document.createElement("button");
+      overlay.type = "button";
+      overlay.className = "voice-play-overlay";
+      overlay.setAttribute("aria-label", "播放语音播报");
+      overlay.innerHTML =
+        '<span class="voice-play-circle" aria-hidden="true">' +
+        '<svg width="28" height="28" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>' +
+        "</span>";
+
+      function syncOverlay() {
+        const playing = !audio.paused;
+        overlay.classList.toggle("is-hidden", playing);
+      }
+      audio.addEventListener("play", syncOverlay);
+      audio.addEventListener("pause", syncOverlay);
+      audio.addEventListener("ended", syncOverlay);
+      syncOverlay();
+
+      overlay.addEventListener("click", () => {
+        audio.play().catch(() => {});
+      });
+
+      shell.appendChild(audio);
+      shell.appendChild(overlay);
+      hostEl.appendChild(shell);
+      hostEl.hidden = false;
+      return audio;
+    }
+
+    function clearVoiceHost(hostEl) {
+      if (!hostEl) return;
+      hostEl.innerHTML = "";
+      hostEl.hidden = true;
+    }
+
+    /** 11 位手机号，1 开头 */
+    function isPhone11(v) {
+      return /^1\d{10}$/.test(String(v || "").trim());
+    }
+
+    function save() {
+      try {
+        localStorage.setItem(
+          STORAGE,
+          JSON.stringify({
+            tab: $("tabQuery").classList.contains("active") ? "query" : "chat",
+            session_id: $("session_id").value.trim(),
+            tts_voice: $("ttsVoice").value,
+          })
+        );
+      } catch (_) {}
+    }
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE);
+        if (!raw) return;
+        const o = JSON.parse(raw);
+        if (o.session_id) $("session_id").value = o.session_id;
+        if (typeof o.tts_voice === "string") {
+          const sel = $("ttsVoice");
+          let v = o.tts_voice;
+          if (v === "") v = "none";
+          const ok = Array.from(sel.options).some((opt) => opt.value === v);
+          if (ok) sel.value = v;
+        }
+        if (o.tab === "chat") switchTab("chat");
+      } catch (_) {}
+    }
+
+    function switchTab(which) {
+      const isQuery = which === "query";
+      $("tabQuery").classList.toggle("active", isQuery);
+      $("tabQuery").setAttribute("aria-selected", isQuery);
+      $("tabChat").classList.toggle("active", !isQuery);
+      $("tabChat").setAttribute("aria-selected", !isQuery);
+      $("viewQuery").classList.toggle("active", isQuery);
+      $("viewChat").classList.toggle("active", !isQuery);
+      $("blockExamples").classList.toggle("hidden", !isQuery);
+      $("sidebarTitle").textContent = isQuery ? COPY.query.title : COPY.chat.title;
+      $("sidebarDesc").textContent = isQuery ? COPY.query.desc : COPY.chat.desc;
+      save();
+    }
+
+    $("tabQuery").onclick = () => switchTab("query");
+    $("tabChat").onclick = () => switchTab("chat");
+
+    function newSessionId() {
+      if (crypto.randomUUID) return "app-" + crypto.randomUUID();
+      return "app-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+    }
+    $("btnNewSession").onclick = () => {
+      $("session_id").value = newSessionId();
+      save();
+    };
+
+    /* ---- Query ---- */
+    function pickAnswer(j) {
+      if (j.multimodal_answer) return j.multimodal_answer;
+      if (j.answer != null && j.answer !== "") return j.answer;
+      if (j.retrieval_answer) return j.retrieval_answer;
+      return "";
+    }
+
+    function renderAnswer(text) {
+      const el = $("answerOut");
+      if (!text || !text.trim()) {
+        el.className = "answer-dark empty";
+        el.textContent = "（暂无文本内容）";
+        return;
+      }
+      el.className = "answer-dark";
+      if (typeof marked !== "undefined" && marked.parse) {
+        try {
+          el.innerHTML = marked.parse(text, { breaks: true });
+          return;
+        } catch (_) {}
+      }
+      el.className = "answer-dark raw-fallback";
+      el.textContent = text;
+    }
+
+    $("image_file").addEventListener("change", () => {
+      const f = $("image_file").files && $("image_file").files[0];
+      const img = $("previewImg");
+      const ph = $("previewPh");
+      if (!f) {
+        img.hidden = true;
+        ph.hidden = false;
+        ph.textContent = "未选择图片";
+        return;
+      }
+      ph.hidden = true;
+      img.hidden = false;
+      img.src = URL.createObjectURL(f);
+    });
+
+    document.querySelectorAll("#blockExamples .example-card").forEach((card) => {
+      card.addEventListener("click", () => {
+        $("query").value = card.getAttribute("data-q") || "";
+      });
+    });
+
+    $("ttsVoice").addEventListener("change", save);
+
+    $("btnRun").onclick = async () => {
+      const q = $("query").value.trim();
+      if (!q) {
+        $("status").textContent = "请填写问题内容";
+        $("status").className = "status-line err";
+        return;
+      }
+      const ph0 = $("phone").value.trim();
+      if (!isPhone11(ph0)) {
+        $("status").textContent = "请填写 11 位手机号（必填，示例见占位符）";
+        $("status").className = "status-line err";
+        return;
+      }
+      const btn = $("btnRun");
+      btn.disabled = true;
+      setBadge($("appBadge"), "busy");
+      $("status").textContent = "";
+      $("status").className = "status-line";
+      $("rawPre").textContent = "";
+      $("plannerPre").textContent = "";
+      $("plannerBox").hidden = true;
+      clearVoiceHost($("audioHost"));
+
+      const fd = new FormData();
+      fd.append("query", q);
+      const pc = $("patient_code").value.trim();
+      if (pc) fd.append("patient_code", pc);
+      const ph = $("phone").value.trim();
+      fd.append("phone", ph);
+      const sid = $("session_id").value.trim();
+      if (sid) fd.append("session_id", sid);
+      fd.append("tts_voice", $("ttsVoice").value.trim());
+      const iu = $("image_url").value.trim();
+      if (iu) fd.append("image_url", iu);
+      const file = $("image_file").files && $("image_file").files[0];
+      if (file) fd.append("image_file", file);
+
+      const wantPlanner = $("planner_debug").checked;
+      const plannerPromise = wantPlanner
+        ? fetch(apiBase + "/api/agent/react-plan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_query: q,
+              context: { patient_code: pc || undefined, phone: ph || undefined },
+            }),
+          }).then((r) => r.json())
+        : Promise.resolve(null);
+
+      try {
+        const r = await fetch(apiBase + "/api/agent/query-multimodal", { method: "POST", body: fd });
+        const text = await r.text();
+        let j;
+        try {
+          j = JSON.parse(text);
+        } catch {
+          setBadge($("appBadge"), "err");
+          $("status").textContent = "请求失败（状态码 " + r.status + "，响应非 JSON）";
+          $("status").className = "status-line err";
+          renderAnswer(text.slice(0, 8000));
+          $("rawPre").textContent = text;
+          return;
+        }
+        $("rawPre").textContent = JSON.stringify(j, null, 2);
+        if (!r.ok) {
+          setBadge($("appBadge"), "err");
+          $("status").textContent = "请求失败（状态码 " + r.status + "）";
+          $("status").className = "status-line err";
+          renderAnswer(typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail || j, null, 2));
+          return;
+        }
+        setBadge($("appBadge"), "ok");
+        $("status").textContent =
+          "完成 · 工具：" +
+          toolNameZh(j.tool_name || "—") +
+          " · 音色：" +
+          ttsVoiceDisplay(j.tts_voice);
+        $("status").className = "status-line ok";
+        renderAnswer(pickAnswer(j));
+        clearVoiceHost($("audioHost"));
+        const au = j.audio_url;
+        if (ttsWantsAudio() && j.audio_error && !au) {
+          const err = document.createElement("div");
+          err.className = "voice-tts-err";
+          err.textContent = "语音未生成：" + j.audio_error;
+          $("audioHost").appendChild(err);
+          $("audioHost").hidden = false;
+        }
+        if (au && ttsWantsAudio()) {
+          mountVoicePlayer($("audioHost"), au, "dark");
+        }
+        if (wantPlanner) {
+          $("plannerBox").hidden = false;
+          try {
+            $("plannerPre").textContent = JSON.stringify(await plannerPromise, null, 2);
+          } catch (e) {
+            $("plannerPre").textContent = String(e);
+          }
+        }
+      } catch (e) {
+        setBadge($("appBadge"), "err");
+        $("status").textContent = String(e);
+        $("status").className = "status-line err";
+        renderAnswer(String(e));
+      } finally {
+        btn.disabled = false;
+        setTimeout(() => setBadge($("appBadge"), "idle"), 1800);
+      }
+      save();
+    };
+
+    /* ---- Chat ---- */
+    function appendMsg(role, htmlOrText, isErr) {
+      $("welcomeChat").style.display = "none";
+      const div = document.createElement("div");
+      div.className = "msg " + (isErr ? "err" : role);
+      if (role === "assistant" && typeof marked !== "undefined" && marked.parse && !isErr) {
+        try {
+          div.innerHTML = marked.parse(htmlOrText, { breaks: true });
+        } catch (_) {
+          div.textContent = htmlOrText;
+        }
+      } else {
+        div.textContent = htmlOrText;
+      }
+      $("messages").appendChild(div);
+      $("messages").scrollTop = $("messages").scrollHeight;
+    }
+
+    async function sendChat() {
+      const text = $("chatInput").value.trim();
+      if (!text) return;
+      if (!isPhone11($("phone").value)) {
+        appendMsg("assistant", "请先在左侧填写 11 位手机号（必填，例如 13800000001）", true);
+        return;
+      }
+      const btn = $("btnSend");
+      btn.disabled = true;
+      setBadge($("chatBadge"), "busy");
+      appendMsg("user", text, false);
+      $("chatInput").value = "";
+
+      const fd = new FormData();
+      fd.append("query", text);
+      const pc = $("patient_code").value.trim();
+      if (pc) fd.append("patient_code", pc);
+      const ph = $("phone").value.trim();
+      fd.append("phone", ph);
+      const sid = $("session_id").value.trim();
+      if (sid) fd.append("session_id", sid);
+      fd.append("tts_voice", $("ttsVoice").value.trim());
+      const iu = $("chat_image_url").value.trim();
+      if (iu) fd.append("image_url", iu);
+      const file = $("chat_image_file").files && $("chat_image_file").files[0];
+      if (file) fd.append("image_file", file);
+      $("chat_image_url").value = "";
+      $("chat_image_file").value = "";
+
+      try {
+        const r = await fetch(apiBase + "/api/agent/query-multimodal", { method: "POST", body: fd });
+        const t = await r.text();
+        let j;
+        try {
+          j = JSON.parse(t);
+        } catch {
+          appendMsg("assistant", t.slice(0, 1500), true);
+          setBadge($("chatBadge"), "err");
+          setTimeout(() => setBadge($("chatBadge"), "idle"), 1500);
+          return;
+        }
+        if (!r.ok) {
+          appendMsg(
+            "assistant",
+            "请求失败（状态码 " + r.status + "）\n" + (typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail || j)),
+            true
+          );
+          setBadge($("chatBadge"), "err");
+          setTimeout(() => setBadge($("chatBadge"), "idle"), 1500);
+          return;
+        }
+        const ans = pickAnswer(j);
+        const tool = j.tool_name || "";
+        const wrap = document.createElement("div");
+        wrap.className = "msg assistant";
+        {
+          const meta = document.createElement("div");
+          meta.className = "meta";
+          const parts = [];
+          if (tool) parts.push("工具：" + toolNameZh(tool));
+          parts.push("音色：" + ttsVoiceDisplay(j.tts_voice));
+          meta.textContent = parts.join(" · ");
+          wrap.appendChild(meta);
+        }
+        const body = document.createElement("div");
+        if (typeof marked !== "undefined" && marked.parse && ans) {
+          try {
+            body.innerHTML = marked.parse(ans, { breaks: true });
+          } catch (_) {
+            body.textContent = ans;
+          }
+        } else {
+          body.textContent = ans || "（空）";
+        }
+        wrap.appendChild(body);
+        const au = j.audio_url;
+        if (ttsWantsAudio() && j.audio_error && !au) {
+          const err = document.createElement("div");
+          err.className = "voice-tts-err";
+          err.textContent = "语音未生成：" + j.audio_error;
+          wrap.appendChild(err);
+        }
+        if (au && ttsWantsAudio()) {
+          const host = document.createElement("div");
+          host.className = "audio-host";
+          wrap.appendChild(host);
+          mountVoicePlayer(host, au, "light");
+        }
+        $("messages").appendChild(wrap);
+        $("messages").scrollTop = $("messages").scrollHeight;
+        setBadge($("chatBadge"), "ok");
+        setTimeout(() => setBadge($("chatBadge"), "idle"), 1200);
+      } catch (e) {
+        appendMsg("assistant", String(e), true);
+        setBadge($("chatBadge"), "err");
+        setTimeout(() => setBadge($("chatBadge"), "idle"), 1500);
+      } finally {
+        btn.disabled = false;
+        $("chatInput").focus();
+      }
+      save();
+    }
+
+    $("btnSend").onclick = sendChat;
+    $("chatInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendChat();
+      }
+    });
+
+    ["patient_code", "phone", "session_id"].forEach((id) => {
+      $(id).addEventListener("change", save);
+    });
+
+    load();
+  </script>
+</body>
+</html>

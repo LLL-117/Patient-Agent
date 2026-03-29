@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>短期记忆 · 简单测试</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 24px auto; padding: 0 16px; }
+    label { display: block; margin-top: 12px; font-weight: 600; }
+    input, textarea { width: 100%; box-sizing: border-box; margin-top: 4px; padding: 8px; }
+    button { margin-top: 16px; padding: 10px 20px; cursor: pointer; }
+    pre { background: #f4f4f4; padding: 12px; overflow: auto; font-size: 13px; border-radius: 6px; }
+    .hint { color: #555; font-size: 14px; margin-top: 8px; }
+    a { color: #06c; }
+  </style>
+</head>
+<body>
+  <h1>短期记忆 · 简单测试</h1>
+  <p class="hint">打开本页前请先启动：<code>uvicorn backend.main:app --port 8000</code>。暂无登录：<strong>手机号必填</strong>（11 位，与库里患者一致）。同一会话 ID 多轮会把每轮问答写入短期记忆库。</p>
+
+  <label>手机号（11 位，必填）</label>
+  <input id="phone" placeholder="例如 13800000001" inputmode="numeric" autocomplete="off" />
+
+  <label>患者编号（可与手机号二选一）</label>
+  <input id="patient_code" placeholder="例如 P1001" />
+
+  <label>会话 ID（选填；多轮请保持不变）</label>
+  <input id="session_id" placeholder="需要写短期记忆时再填" />
+
+  <label>问题 query</label>
+  <textarea id="query" rows="3">P1001 最近一次就诊记录</textarea>
+
+  <button type="button" id="btn">发送问答</button>
+
+  <label style="margin-top:20px">上次返回的患者内部 ID（仅作展示，查短期记忆请用上方患者编号）</label>
+  <input id="patient_id" placeholder="第一次请求后会自动填入" />
+
+  <button type="button" id="btn2">查看本会话短期记忆</button>
+
+  <label style="margin-top:20px">接口返回（节选）</label>
+  <pre id="out">（点击「发送问答」）</pre>
+
+  <p class="hint">
+    更省事：也可打开 <a href="/docs" target="_blank">/docs</a> → <strong>多模态问答</strong> → Try it out，填写问题、手机号、患者编号、会话 ID 等（无登录时建议带手机号）。
+  </p>
+  <p class="hint">
+    <a id="openViewer" href="#">在「短期记忆可视化」页查看本会话中的图 / 音</a>（需已填写患者编号与会话 ID）
+  </p>
+
+  <script>
+    const api = ""; // 同域
+
+    function isPhone11(v) {
+      return /^1\d{10}$/.test(String(v || "").trim());
+    }
+
+    document.getElementById("openViewer").onclick = (e) => {
+      e.preventDefault();
+      const code = document.getElementById("patient_code").value.trim();
+      const sid = document.getElementById("session_id").value.trim();
+      if (!code || !sid) {
+        alert("请先填写患者编号与会话 ID");
+        return;
+      }
+      window.open(
+        "/test/session_memory_view.html?patient_code=" + encodeURIComponent(code) + "&session_id=" + encodeURIComponent(sid),
+        "_blank"
+      );
+    };
+
+    document.getElementById("btn").onclick = async () => {
+      const ph = document.getElementById("phone").value.trim();
+      const out = document.getElementById("out");
+      if (!isPhone11(ph)) {
+        out.textContent = "请填写 11 位手机号（必填，例如 13800000001）";
+        return;
+      }
+      const fd = new FormData();
+      fd.append("query", document.getElementById("query").value.trim());
+      fd.append("phone", ph);
+      fd.append("patient_code", document.getElementById("patient_code").value.trim());
+      fd.append("session_id", document.getElementById("session_id").value.trim());
+      fd.append("tts_voice", "none");
+
+      out.textContent = "请求中…";
+      try {
+        const r = await fetch(api + "/api/agent/query-multimodal", { method: "POST", body: fd });
+        const j = await r.json();
+        if (j.data && j.data.patient_id) {
+          document.getElementById("patient_id").value = j.data.patient_id;
+        }
+        out.textContent = JSON.stringify({
+          answer: j.answer,
+          multimodal_answer: j.multimodal_answer,
+          patient_id: j.data && j.data.patient_id,
+          tool_name: j.tool_name,
+        }, null, 2);
+      } catch (e) {
+        out.textContent = String(e);
+      }
+    };
+
+    document.getElementById("btn2").onclick = async () => {
+      const code = document.getElementById("patient_code").value.trim();
+      const sid = document.getElementById("session_id").value.trim();
+      const out = document.getElementById("out");
+      if (!code || !sid) {
+        out.textContent = "请填写患者编号与会话 ID";
+        return;
+      }
+      out.textContent = "请求中…";
+      try {
+        const r = await fetch(api + "/patients/by-code/" + encodeURIComponent(code) + "/memory/session/" + encodeURIComponent(sid));
+        const j = await r.json();
+        out.textContent = JSON.stringify(j, null, 2);
+      } catch (e) {
+        out.textContent = String(e);
+      }
+    };
+  </script>
+</body>
+</html>

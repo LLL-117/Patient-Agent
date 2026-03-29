@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>短期记忆 · 图/音查看</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 24px auto; padding: 0 16px; }
+    label { display: block; margin-top: 12px; font-weight: 600; }
+    input { width: 100%; box-sizing: border-box; margin-top: 4px; padding: 8px; }
+    button { margin-top: 16px; padding: 10px 20px; cursor: pointer; }
+    .msg { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-top: 16px; background: #fafafa; }
+    .msg.user { border-left: 4px solid #06c; }
+    .msg.assistant { border-left: 4px solid #0a0; }
+    .role { font-size: 12px; color: #666; margin-bottom: 8px; }
+    pre.text { white-space: pre-wrap; margin: 0; font-size: 14px; }
+    .media { margin-top: 10px; }
+    .media img { max-width: 100%; height: auto; border-radius: 6px; }
+    .media audio { width: 100%; margin-top: 6px; }
+    .hint { color: #555; font-size: 14px; margin-top: 8px; }
+    .err { color: #c00; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1>短期记忆 · 直接查看图 / 音</h1>
+  <p class="hint">与 API 同域打开。列表<strong>由上到下为从近到早</strong>（最近一轮在最上）。<code>content</code> 内 Markdown 图/音由本页解析渲染。</p>
+
+  <label>患者编号（如 P1001）</label>
+  <input id="patient_code" placeholder="P1001" />
+
+  <label>会话 ID</label>
+  <input id="session_id" placeholder="例如 test-001" />
+
+  <button type="button" id="btn">加载并渲染</button>
+  <p class="hint"><a href="/test/memory_chat_test.html">返回简单测试页</a> · <a href="/docs" target="_blank">OpenAPI</a></p>
+
+  <div id="err" class="err"></div>
+  <div id="box"></div>
+
+  <script>
+    const api = "";
+
+    function qs(name) {
+      const u = new URLSearchParams(window.location.search);
+      return u.get(name) || "";
+    }
+
+    function initFromQuery() {
+      const c = qs("patient_code");
+      const s = qs("session_id");
+      if (c) document.getElementById("patient_code").value = c;
+      if (s) document.getElementById("session_id").value = s;
+    }
+
+    function mediaFromContent(text) {
+      const media = document.createElement("div");
+      media.className = "media";
+      if (!text) return media;
+      const reImg = /!\[([^\]]*)\]\(([^)]+)\)/g;
+      let mm;
+      while ((mm = reImg.exec(text)) !== null) {
+        const url = mm[2];
+        const cap = document.createElement("div");
+        cap.className = "hint";
+        cap.textContent = mm[1] || "图片";
+        media.appendChild(cap);
+        const img = document.createElement("img");
+        img.src = url;
+        img.alt = mm[1] || "img";
+        if (url.indexOf("http") === 0) img.crossOrigin = "anonymous";
+        media.appendChild(img);
+      }
+      const reAu = /\[语音播报\]\(([^)]+)\)/g;
+      while ((mm = reAu.exec(text)) !== null) {
+        const cap = document.createElement("div");
+        cap.className = "hint";
+        cap.textContent = "语音播报";
+        media.appendChild(cap);
+        const a = document.createElement("audio");
+        a.controls = true;
+        a.src = mm[1];
+        media.appendChild(a);
+      }
+      return media;
+    }
+
+    function renderOne(m, i) {
+      const role = (m.role || "?").toLowerCase();
+      const div = document.createElement("div");
+      div.className = "msg " + (role === "user" ? "user" : role === "assistant" ? "assistant" : "");
+      const head = document.createElement("div");
+      head.className = "role";
+      let title = "#" + (i + 1) + (i === 0 ? "（最近）" : "") + " · " + (m.role || "") + (m.ts ? " · " + m.ts : "");
+      if (m.role === "assistant" && m.extras && m.extras.answer_type) {
+        const t = m.extras.answer_type;
+        title += t === "multimodal" ? " · 多模态回答" : t === "text_retrieval" ? " · 文本检索" : " · " + t;
+        if (m.extras.answer_layout === "retrieval_plus_vision") {
+          title += " · 分节：既往检索+当前图";
+        }
+      }
+      head.textContent = title;
+      div.appendChild(head);
+      const raw = m.content || "";
+      const pre = document.createElement("pre");
+      pre.className = "text";
+      pre.textContent = raw;
+      div.appendChild(pre);
+
+      const fromMd = mediaFromContent(raw);
+      if (fromMd.childNodes.length) {
+        div.appendChild(fromMd);
+      } else {
+        const ex = m.extras;
+        if (ex && ex.view) {
+          const v = ex.view;
+          const media = document.createElement("div");
+          media.className = "media";
+          if (v.uploaded_image) {
+            const cap = document.createElement("div");
+            cap.className = "hint";
+            cap.textContent = "本地上传图";
+            media.appendChild(cap);
+            const img = document.createElement("img");
+            img.src = v.uploaded_image;
+            img.alt = "session image";
+            media.appendChild(img);
+          }
+          if (v.remote_image_url) {
+            const cap = document.createElement("div");
+            cap.className = "hint";
+            cap.textContent = "公网图片";
+            media.appendChild(cap);
+            const img = document.createElement("img");
+            img.src = v.remote_image_url;
+            img.alt = "remote";
+            img.crossOrigin = "anonymous";
+            media.appendChild(img);
+          }
+          if (v.audio) {
+            const cap = document.createElement("div");
+            cap.className = "hint";
+            cap.textContent = "语音";
+            media.appendChild(cap);
+            const a = document.createElement("audio");
+            a.controls = true;
+            a.src = v.audio;
+            media.appendChild(a);
+          }
+          div.appendChild(media);
+        }
+      }
+      return div;
+    }
+
+    document.getElementById("btn").onclick = async () => {
+      const code = document.getElementById("patient_code").value.trim();
+      const sid = document.getElementById("session_id").value.trim();
+      const err = document.getElementById("err");
+      const box = document.getElementById("box");
+      err.textContent = "";
+      box.innerHTML = "";
+      if (!code || !sid) {
+        err.textContent = "请填写患者编号与会话 ID";
+        return;
+      }
+      try {
+        const r = await fetch(api + "/patients/by-code/" + encodeURIComponent(code) + "/memory/session/" + encodeURIComponent(sid));
+        if (!r.ok) {
+          err.textContent = await r.text();
+          return;
+        }
+        const j = await r.json();
+        const msgs = j.messages || [];
+        if (!msgs.length) {
+          box.innerHTML = "<p class=\"hint\">暂无消息</p>";
+          return;
+        }
+        msgs.forEach((m, i) => box.appendChild(renderOne(m, i)));
+      } catch (e) {
+        err.textContent = String(e);
+      }
+    };
+
+    initFromQuery();
+    if (qs("patient_code") && qs("session_id")) {
+      document.getElementById("btn").click();
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Patient Agent · 问答</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --border: #2d3a4d;
+      --text: #e6edf3;
+      --muted: #8b9cb3;
+      --accent: #3d8bfd;
+      --accent-dim: #2563eb;
+      --ok: #3fb950;
+      --err: #f85149;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      margin: 0;
+      min-height: 100vh;
+      background: linear-gradient(160deg, var(--bg) 0%, #151d2a 100%);
+      color: var(--text);
+      line-height: 1.55;
+    }
+    .wrap {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 28px 18px 48px;
+    }
+    h1 {
+      font-size: 1.35rem;
+      font-weight: 600;
+      margin: 0 0 6px;
+      letter-spacing: -0.02em;
+    }
+    .sub {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-bottom: 22px;
+    }
+    .sub code { background: var(--surface); padding: 2px 6px; border-radius: 4px; font-size: 0.85em; }
+    label {
+      display: block;
+      margin-top: 14px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    input[type="text"],
+    textarea {
+      width: 100%;
+      margin-top: 6px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--text);
+      font-size: 15px;
+    }
+    textarea { min-height: 96px; resize: vertical; }
+    input:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(61, 139, 253, 0.2);
+    }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin-top: 10px;
+    }
+    .row label.inline {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0;
+      text-transform: none;
+      font-weight: 500;
+      color: var(--text);
+      cursor: pointer;
+    }
+    .row input[type="checkbox"] { width: auto; accent-color: var(--accent); }
+    .actions {
+      margin-top: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+    button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      background: var(--accent);
+      color: #fff;
+    }
+    button:hover { background: var(--accent-dim); }
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    button.ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+    button.ghost:hover {
+      border-color: var(--accent);
+      color: var(--text);
+    }
+    .status {
+      font-size: 0.85rem;
+      color: var(--muted);
+      min-height: 1.2em;
+    }
+    .status.err { color: var(--err); }
+    .status.ok { color: var(--ok); }
+    .panel {
+      margin-top: 22px;
+      padding: 16px 18px;
+      border-radius: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+    .panel h2 {
+      margin: 0 0 10px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .answer {
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 15px;
+      line-height: 1.65;
+    }
+    .answer.empty { color: var(--muted); font-style: italic; }
+    audio { margin-top: 12px; width: 100%; max-height: 40px; }
+    details {
+      margin-top: 14px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    details summary { cursor: pointer; user-select: none; }
+    pre {
+      margin: 0;
+      padding: 12px;
+      overflow: auto;
+      background: var(--bg);
+      border-radius: 6px;
+      font-size: 12px;
+      line-height: 1.45;
+      max-height: 320px;
+    }
+    footer {
+      margin-top: 28px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    footer a { color: var(--accent); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Patient Agent · 问答</h1>
+    <p class="sub">
+      调用 <code>POST /api/agent/query-multimodal</code>。先启动服务：
+      <code>uvicorn backend.main:app --port 8000</code>，本页地址为
+      <code>/test/agent_query.html</code>。
+    </p>
+
+    <label for="query">问题（必填）</label>
+    <textarea id="query" placeholder="例如：P1001 最近一次就诊记录">P1001 最近一次就诊记录</textarea>
+
+    <label for="patient_code">患者编号</label>
+    <input type="text" id="patient_code" placeholder="例如 P1001" autocomplete="off" />
+
+    <label for="phone">手机号（11 位，必填）</label>
+    <input type="text" id="phone" inputmode="numeric" autocomplete="off" placeholder="例如 13800000001" />
+
+    <label for="session_id">会话 ID（选填；多轮记忆请保持同一会话）</label>
+    <input type="text" id="session_id" placeholder="默认不填" autocomplete="off" />
+
+    <label for="image_url">公网图片 URL（可选，需可被 VL 访问）</label>
+    <input type="text" id="image_url" placeholder="https://..." autocomplete="off" />
+
+    <label for="image_file">或上传图片（可选）</label>
+    <input type="file" id="image_file" accept="image/*" />
+
+    <div class="row">
+      <label class="inline">声音（选「无」不播报）
+        <select id="ttsVoice" style="margin-left:8px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);max-width:min(100%,280px)">
+          <option value="none" selected>无</option>
+          <option value="Cherry">Cherry</option>
+          <option value="longanhuan">龙安欢</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="actions">
+      <button type="button" id="btnSend">发送</button>
+      <button type="button" id="btnClear" class="ghost">清空回答</button>
+    </div>
+    <p class="status" id="status"></p>
+
+    <div class="panel" id="resultPanel" hidden>
+      <h2>回答</h2>
+      <div class="answer empty" id="answerOut">（尚未请求）</div>
+      <audio id="audioEl" controls hidden></audio>
+      <details id="rawDetails">
+        <summary>展开原始响应数据</summary>
+        <pre id="rawOut"></pre>
+      </details>
+    </div>
+
+    <footer>
+      <a href="/">OpenAPI</a>
+      ·
+      <a href="/docs">Swagger /docs</a>
+      ·
+      <a href="/test/memory_chat_test.html">简易版 memory_chat_test</a>
+    </footer>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const apiBase = "";
+
+    function pickAnswer(j) {
+      if (j.multimodal_answer) return j.multimodal_answer;
+      if (j.answer != null && j.answer !== "") return j.answer;
+      if (j.retrieval_answer) return j.retrieval_answer;
+      return "";
+    }
+
+    function isPhone11(v) {
+      return /^1\d{10}$/.test(String(v || "").trim());
+    }
+
+    const TOOL_NAME_ZH = {
+      "case.query_cases": "病例查询",
+      "visit.query_visits": "就诊记录查询",
+      "auth.verify_identity": "身份核验",
+      "identity.request_verification": "待核验身份",
+    };
+    function toolNameZh(name) {
+      return TOOL_NAME_ZH[name] || name;
+    }
+
+    $("btnSend").onclick = async () => {
+      const q = $("query").value.trim();
+      if (!q) {
+        $("status").textContent = "请填写问题";
+        $("status").className = "status err";
+        return;
+      }
+      if (!isPhone11($("phone").value)) {
+        $("status").textContent = "请填写 11 位手机号（必填，示例见占位符）";
+        $("status").className = "status err";
+        return;
+      }
+      const btn = $("btnSend");
+      btn.disabled = true;
+      $("status").textContent = "请求中…";
+      $("status").className = "status";
+      $("resultPanel").hidden = false;
+      $("answerOut").textContent = "…";
+      $("answerOut").classList.remove("empty");
+      $("audioEl").hidden = true;
+      $("rawOut").textContent = "";
+
+      const fd = new FormData();
+      fd.append("query", q);
+      const pc = $("patient_code").value.trim();
+      if (pc) fd.append("patient_code", pc);
+      fd.append("phone", $("phone").value.trim());
+      const sid = $("session_id").value.trim();
+      if (sid) fd.append("session_id", sid);
+      fd.append("tts_voice", $("ttsVoice").value.trim());
+      const iu = $("image_url").value.trim();
+      if (iu) fd.append("image_url", iu);
+      const file = $("image_file").files && $("image_file").files[0];
+      if (file) fd.append("image_file", file);
+
+      try {
+        const r = await fetch(apiBase + "/api/agent/query-multimodal", {
+          method: "POST",
+          body: fd,
+        });
+        const text = await r.text();
+        let j;
+        try {
+          j = JSON.parse(text);
+        } catch {
+          $("status").textContent = "请求失败（状态码 " + r.status + "，响应非 JSON）";
+          $("status").className = "status err";
+          $("answerOut").textContent = text.slice(0, 4000);
+          $("rawOut").textContent = text;
+          return;
+        }
+        if (!r.ok) {
+          $("status").textContent = "请求失败（状态码 " + r.status + "）" + (j.detail ? " " + JSON.stringify(j.detail) : "");
+          $("status").className = "status err";
+          $("answerOut").textContent = text;
+          $("rawOut").textContent = JSON.stringify(j, null, 2);
+          return;
+        }
+        $("status").textContent = "完成 · 工具：" + toolNameZh(j.tool_name || "—");
+        $("status").className = "status ok";
+        const ans = pickAnswer(j);
+        $("answerOut").textContent = ans || "（暂无文本内容，可展开查看原始数据）";
+        $("answerOut").classList.toggle("empty", !ans);
+        $("rawOut").textContent = JSON.stringify(j, null, 2);
+
+        const au = j.audio_url;
+        if (au && $("ttsVoice").value && $("ttsVoice").value !== "none") {
+          const a = $("audioEl");
+          const src = au.startsWith("http") ? au : apiBase.replace(/\/$/, "") + au;
+          a.src = src;
+          a.hidden = false;
+        }
+      } catch (e) {
+        $("status").textContent = String(e);
+        $("status").className = "status err";
+        $("answerOut").textContent = String(e);
+      } finally {
+        btn.disabled = false;
+      }
+    };
+
+    $("btnClear").onclick = () => {
+      $("answerOut").textContent = "（尚未请求）";
+      $("answerOut").classList.add("empty");
+      $("rawOut").textContent = "";
+      $("status").textContent = "";
+      $("status").className = "status";
+      $("audioEl").hidden = true;
+      $("audioEl").removeAttribute("src");
+    };
+  </script>
+</body>
+</html>

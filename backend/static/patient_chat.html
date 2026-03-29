@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Patient Agent · 交互式聊天</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    :root {
+      --page-bg: #e8eaed;
+      --card: #ffffff;
+      --text: #1a1d21;
+      --muted: #5c6370;
+      --border: #d8dce3;
+      --accent: #166534;
+      --accent-hover: #14532d;
+      --user-bg: #dcfce7;
+      --user-border: #86efac;
+      --bot-bg: #f8fafc;
+      --bot-border: #e2e8f0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--page-bg);
+      color: var(--text);
+    }
+    header.top {
+      flex-shrink: 0;
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 20px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px 20px;
+    }
+    header.top h1 {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 700;
+    }
+    header.top .kicker {
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    header.top nav a {
+      color: var(--accent);
+      font-size: 0.88rem;
+      text-decoration: none;
+      margin-right: 12px;
+    }
+    header.top nav a:hover { text-decoration: underline; }
+    .settings {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      flex: 1;
+      min-width: 200px;
+    }
+    .settings label {
+      font-size: 0.78rem;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .settings input[type="text"] {
+      width: 120px;
+      padding: 6px 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    .settings input#session_id { width: 200px; }
+    .settings input[type="checkbox"] { accent-color: var(--accent); }
+    .btn {
+      padding: 6px 12px;
+      font-size: 13px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #fff;
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    .chat-wrap {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 16px;
+      max-width: 900px;
+      width: 100%;
+      margin: 0 auto;
+    }
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 4px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .msg {
+      max-width: 92%;
+      padding: 12px 14px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.55;
+      word-break: break-word;
+    }
+    .msg.user {
+      align-self: flex-end;
+      background: var(--user-bg);
+      border: 1px solid var(--user-border);
+    }
+    .msg.assistant {
+      align-self: flex-start;
+      background: var(--bot-bg);
+      border: 1px solid var(--bot-border);
+    }
+    .msg.assistant :is(h1, h2, h3) { margin: 0.6em 0 0.4em; font-size: 1em; }
+    .msg.assistant p { margin: 0.4em 0; }
+    .msg.assistant pre { background: #1e293b; color: #e2e8f0; padding: 10px; border-radius: 6px; overflow: auto; font-size: 12px; }
+    .msg.err { border-color: #fecaca; background: #fef2f2; color: #991b1b; }
+    .msg .meta {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .welcome {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.9rem;
+      padding: 24px 16px;
+    }
+
+    .audio-host { margin-top: 10px; max-width: 100%; }
+    .voice-player-shell {
+      position: relative;
+      border-radius: 12px;
+      padding: 10px 12px 12px;
+      max-width: 520px;
+      background: linear-gradient(180deg, #f1f5f9 0%, #e8eef5 100%);
+      border: 1px solid #cbd5e1;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+    }
+    .voice-player-shell .voice-player-label {
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #475569;
+    }
+    .voice-player-shell .msg-audio {
+      display: block;
+      width: 100%;
+      min-height: 44px;
+    }
+    .voice-play-overlay {
+      position: absolute;
+      inset: 0;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(248, 250, 252, 0.72);
+      transition: opacity 0.2s ease, visibility 0.2s ease;
+      z-index: 2;
+    }
+    .voice-play-overlay:hover { background: rgba(13, 148, 136, 0.12); }
+    .voice-play-overlay:focus-visible { outline: 2px solid #0d9488; outline-offset: 2px; }
+    .voice-play-overlay.is-hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    .voice-play-circle {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #14b8a6, #0d9488);
+      box-shadow: 0 4px 20px rgba(13, 148, 136, 0.45), 0 0 0 4px rgba(255, 255, 255, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .voice-play-overlay:active .voice-play-circle { transform: scale(0.94); }
+    .voice-play-circle svg { margin-left: 4px; }
+    .voice-tts-err { font-size: 12px; color: #b91c1c; margin-top: 8px; }
+
+    .composer {
+      flex-shrink: 0;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      box-shadow: 0 -2px 10px rgba(0,0,0,0.04);
+    }
+    .composer-row {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+    }
+    .composer textarea {
+      flex: 1;
+      min-height: 44px;
+      max-height: 160px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 15px;
+      font-family: inherit;
+      resize: vertical;
+    }
+    .composer textarea:focus { outline: none; border-color: var(--accent); }
+    .composer-tools {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+      align-items: center;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .composer-tools input[type="file"] { font-size: 12px; max-width: 200px; }
+    footer.hint {
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--muted);
+      padding: 8px;
+    }
+    footer.hint a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div>
+      <div class="kicker">PATIENT AGENT</div>
+      <h1>交互式聊天</h1>
+    </div>
+    <nav>
+      <a href="/test/patient_app.html">统一页（Query+聊天）</a>
+      <a href="/test/patient_query.html">Query 检索页</a>
+      <a href="/docs">/docs</a>
+    </nav>
+    <div class="settings">
+      <label>患者编号 <input type="text" id="patient_code" placeholder="例如 P1001" autocomplete="off" /></label>
+      <label>手机号（11 位，必填） <input type="text" id="phone" placeholder="例如 13800000001" inputmode="numeric" autocomplete="off" /></label>
+      <label>会话 ID（默认留空；多轮记忆请自行填写） <input type="text" id="session_id" placeholder="选填" autocomplete="off" /></label>
+      <button type="button" class="btn" id="btnNewSession" title="生成新会话 ID">新会话</button>
+      <label style="display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:200px;max-width:320px">
+        <span style="font-size:0.72rem;color:var(--muted)">声音选择（无=不播报）</span>
+        <select id="ttsVoice" style="width:100%;padding:4px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px">
+          <option value="none" selected>无（不播报）</option>
+          <optgroup label="CosyVoice">
+            <option value="longanyang">龙安洋 · 阳光大男孩</option>
+            <option value="longanhuan">龙安欢 · 欢脱元气女</option>
+            <option value="longxiaochun_v3">龙小淳 · 知性积极女</option>
+            <option value="longxiaoxia_v3">龙小夏 · 沉稳权威女</option>
+            <option value="longyumi_v3">YUMI · 正经青年女</option>
+            <option value="longanwen_v3">龙安温 · 优雅知性女</option>
+            <option value="longanli_v3">龙安莉 · 利落从容女</option>
+            <option value="longanyun_v3">龙安昀 · 居家暖男</option>
+          </optgroup>
+          <optgroup label="Qwen">
+            <option value="Cherry">Cherry 芊悦</option>
+            <option value="Serena">Serena 苏瑶</option>
+            <option value="Ethan">Ethan 晨煦</option>
+            <option value="Chelsie">Chelsie 千雪</option>
+            <option value="Maia">Maia 四月</option>
+            <option value="Katerina">Katerina 御姐</option>
+          </optgroup>
+        </select>
+      </label>
+    </div>
+  </header>
+
+  <div class="chat-wrap">
+    <div id="messages">
+      <p class="welcome" id="welcome">
+        多轮对话会复用同一会话 ID，并写入短期记忆。请先填写<strong>手机号（必填）</strong>，再输入问题并发送。<br />
+        与 <a href="/test/patient_query.html">Query 页</a> 共用后端接口 <code>POST /api/agent/query-multimodal</code>。
+      </p>
+    </div>
+
+    <div class="composer">
+      <div class="composer-row">
+        <textarea id="input" placeholder="输入消息…（可多次追问，建议问题里带上患者编号，或使用上方患者编号）" rows="2"></textarea>
+        <button type="button" class="btn btn-primary" id="btnSend">发送</button>
+      </div>
+      <div class="composer-tools">
+        <span>可选图片：</span>
+        <input type="file" id="image_file" accept="image/*" />
+        <span>或 URL</span>
+        <input type="text" id="image_url" placeholder="https://..." style="flex:1;min-width:140px;max-width:280px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" />
+      </div>
+    </div>
+    <footer class="hint">
+      <a href="/test/agent_query.html">精简 agent_query</a>
+      ·
+      <a href="/test/memory_chat_test.html">短期记忆 JSON 测试</a>
+    </footer>
+  </div>
+
+  <script>
+    const apiBase = "";
+    const STORAGE_KEY = "patient_chat_v1";
+
+    function $(id) { return document.getElementById(id); }
+
+    const TOOL_NAME_ZH = {
+      "case.query_cases": "病例查询",
+      "visit.query_visits": "就诊记录查询",
+      "auth.verify_identity": "身份核验",
+      "identity.request_verification": "待核验身份",
+      "agent.greeting": "问候",
+    };
+    function toolNameZh(name) {
+      return TOOL_NAME_ZH[name] || name;
+    }
+
+    const TTS_VOICE_LABEL = {
+      none: "无（不播报）",
+      longanyang: "龙安洋 · 阳光大男孩",
+      longanhuan: "龙安欢 · 欢脱元气女",
+      longxiaochun_v3: "龙小淳 · 知性积极女",
+      longxiaoxia_v3: "龙小夏 · 沉稳权威女",
+      longyumi_v3: "YUMI · 正经青年女",
+      longanwen_v3: "龙安温 · 优雅知性女",
+      longanli_v3: "龙安莉 · 利落从容女",
+      longanyun_v3: "龙安昀 · 居家暖男",
+      Cherry: "芊悦 Cherry",
+      Serena: "苏瑶 Serena",
+      Ethan: "晨煦 Ethan",
+      Chelsie: "千雪 Chelsie",
+      Maia: "四月 Maia",
+      Katerina: "卡捷琳娜 Katerina",
+    };
+
+    function ttsWantsAudio() {
+      const v = $("ttsVoice").value;
+      return v && v !== "none";
+    }
+
+    function ttsVoiceDisplay(apiId) {
+      const id = String(apiId || "").trim();
+      if (!id || id === "none") return TTS_VOICE_LABEL.none || "无（不播报）";
+      const lb = TTS_VOICE_LABEL[id];
+      return lb ? lb + "（" + id + "）" : id;
+    }
+
+    function loadSettings() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const o = JSON.parse(raw);
+        if (o.session_id) $("session_id").value = o.session_id;
+        if (typeof o.tts_voice === "string") {
+          const sel = $("ttsVoice");
+          let v = o.tts_voice;
+          if (v === "") v = "none";
+          if (Array.from(sel.options).some((opt) => opt.value === v)) sel.value = v;
+        }
+      } catch (_) {}
+    }
+
+    function saveSettings() {
+      try {
+        localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({
+            session_id: $("session_id").value.trim(),
+            tts_voice: $("ttsVoice").value,
+          })
+        );
+      } catch (_) {}
+    }
+
+    function newSessionId() {
+      if (crypto.randomUUID) return "chat-" + crypto.randomUUID();
+      return "chat-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 9);
+    }
+
+    function isPhone11(v) {
+      return /^1\d{10}$/.test(String(v || "").trim());
+    }
+
+    function pickAnswer(j) {
+      if (j.multimodal_answer) return j.multimodal_answer;
+      if (j.answer != null && j.answer !== "") return j.answer;
+      if (j.retrieval_answer) return j.retrieval_answer;
+      return "";
+    }
+
+    function resolveAudioUrl(au) {
+      const s = String(au || "").trim();
+      if (!s) return "";
+      if (s.startsWith("http://") || s.startsWith("https://")) return s;
+      const base = String(apiBase || "").replace(/\/$/, "");
+      return (base || "") + (s.startsWith("/") ? s : "/" + s);
+    }
+
+    function mountVoicePlayer(hostEl, audioUrl) {
+      if (!hostEl || !audioUrl) return null;
+      hostEl.innerHTML = "";
+      const shell = document.createElement("div");
+      shell.className = "voice-player-shell";
+
+      const label = document.createElement("div");
+      label.className = "voice-player-label";
+      label.textContent = "语音播报";
+      shell.appendChild(label);
+
+      const audio = document.createElement("audio");
+      audio.className = "msg-audio";
+      audio.controls = true;
+      audio.preload = "auto";
+      audio.src = resolveAudioUrl(audioUrl);
+
+      const overlay = document.createElement("button");
+      overlay.type = "button";
+      overlay.className = "voice-play-overlay";
+      overlay.setAttribute("aria-label", "播放语音播报");
+      overlay.innerHTML =
+        '<span class="voice-play-circle" aria-hidden="true">' +
+        '<svg width="28" height="28" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>' +
+        "</span>";
+
+      function syncOverlay() {
+        overlay.classList.toggle("is-hidden", !audio.paused);
+      }
+      audio.addEventListener("play", syncOverlay);
+      audio.addEventListener("pause", syncOverlay);
+      audio.addEventListener("ended", syncOverlay);
+      syncOverlay();
+
+      overlay.addEventListener("click", () => {
+        audio.play().catch(() => {});
+      });
+
+      shell.appendChild(audio);
+      shell.appendChild(overlay);
+      hostEl.appendChild(shell);
+      return audio;
+    }
+
+    function appendMsg(role, htmlOrText, isError) {
+      $("welcome").style.display = "none";
+      const div = document.createElement("div");
+      div.className = "msg " + (isError ? "err" : role);
+      if (role === "assistant" && typeof marked !== "undefined" && marked.parse && !isError) {
+        try {
+          div.innerHTML = marked.parse(htmlOrText, { breaks: true });
+        } catch (_) {
+          div.textContent = htmlOrText;
+        }
+      } else {
+        div.textContent = htmlOrText;
+      }
+      $("messages").appendChild(div);
+      $("messages").scrollTop = $("messages").scrollHeight;
+    }
+
+    async function send() {
+      const text = $("input").value.trim();
+      if (!text) return;
+      if (!isPhone11($("phone").value)) {
+        appendMsg("assistant", "请填写 11 位手机号（必填，例如 13800000001）", true);
+        return;
+      }
+      const btn = $("btnSend");
+      btn.disabled = true;
+      appendMsg("user", text, false);
+      $("input").value = "";
+
+      const fd = new FormData();
+      fd.append("query", text);
+      const pc = $("patient_code").value.trim();
+      if (pc) fd.append("patient_code", pc);
+      fd.append("phone", $("phone").value.trim());
+      const sid = $("session_id").value.trim();
+      if (sid) fd.append("session_id", sid);
+      fd.append("tts_voice", $("ttsVoice").value.trim());
+      const iu = $("image_url").value.trim();
+      if (iu) fd.append("image_url", iu);
+      const file = $("image_file").files && $("image_file").files[0];
+      if (file) fd.append("image_file", file);
+      $("image_url").value = "";
+      $("image_file").value = "";
+
+      try {
+        const r = await fetch(apiBase + "/api/agent/query-multimodal", { method: "POST", body: fd });
+        const t = await r.text();
+        let j;
+        try {
+          j = JSON.parse(t);
+        } catch {
+          appendMsg("assistant", "接口返回非 JSON（状态码 " + r.status + "）：\n" + t.slice(0, 2000), true);
+          return;
+        }
+        if (!r.ok) {
+          appendMsg(
+            "assistant",
+            "请求失败（状态码 " + r.status + "）\n" + (typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail || j)),
+            true
+          );
+          return;
+        }
+        const ans = pickAnswer(j);
+        const tool = j.tool_name || "";
+        const wrap = document.createElement("div");
+        wrap.className = "msg assistant";
+        {
+          const meta = document.createElement("div");
+          meta.className = "meta";
+          const parts = [];
+          if (tool) parts.push("工具：" + toolNameZh(tool));
+          parts.push("音色：" + ttsVoiceDisplay(j.tts_voice));
+          meta.textContent = parts.join(" · ");
+          wrap.appendChild(meta);
+        }
+        const body = document.createElement("div");
+        if (typeof marked !== "undefined" && marked.parse && ans) {
+          try {
+            body.innerHTML = marked.parse(ans, { breaks: true });
+          } catch (_) {
+            body.textContent = ans;
+          }
+        } else {
+          body.textContent = ans || "（暂无内容）";
+        }
+        wrap.appendChild(body);
+        const au = j.audio_url;
+        if (ttsWantsAudio() && j.audio_error && !au) {
+          const err = document.createElement("div");
+          err.className = "voice-tts-err";
+          err.textContent = "语音未生成：" + j.audio_error;
+          wrap.appendChild(err);
+        }
+        if (au && ttsWantsAudio()) {
+          const host = document.createElement("div");
+          host.className = "audio-host";
+          wrap.appendChild(host);
+          mountVoicePlayer(host, au);
+        }
+        $("welcome").style.display = "none";
+        $("messages").appendChild(wrap);
+        $("messages").scrollTop = $("messages").scrollHeight;
+      } catch (e) {
+        appendMsg("assistant", String(e), true);
+      } finally {
+        btn.disabled = false;
+        $("input").focus();
+      }
+      saveSettings();
+    }
+
+    $("btnSend").onclick = send;
+    $("input").addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        send();
+      }
+    });
+
+    $("btnNewSession").onclick = () => {
+      $("session_id").value = newSessionId();
+      saveSettings();
+    };
+
+    loadSettings();
+    ["patient_code", "phone", "session_id"].forEach((id) => {
+      $(id).addEventListener("change", saveSettings);
+    });
+    $("ttsVoice").addEventListener("change", saveSettings);
+    $("input").focus();
+  </script>
+</body>
+</html>
