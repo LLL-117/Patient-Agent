@@ -24,6 +24,29 @@
 
 ---
 
+## 2.1 MCP Streamable HTTP（规范单端点，非 SSE / 非 stdio）
+
+- **端点**：`POST http://127.0.0.1:8100/mcp`（请求体为 **JSON-RPC 2.0**）。
+- **响应**：`Content-Type: application/json`（单条 JSON-RPC `result` 或 `error`）；**不使用** `text/event-stream`。
+- **会话**：首次 `initialize` 的响应头含 **`MCP-Session-Id`**，后续 `tools/list`、`tools/call` 须在请求头带上该值。
+- **GET `/mcp`**：本实现返回 **405**（不提供 SSE 监听流，与「仅 JSON 响应」一致）。
+
+**PowerShell 示例（初始化 + 列工具 + 调工具）**：
+
+```powershell
+$h = @{ "Content-Type"="application/json"; "Accept"="application/json"; "MCP-Protocol-Version"="2025-11-25" }
+$init = '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}}}'
+$r = Invoke-WebRequest -Uri "http://127.0.0.1:8100/mcp" -Method POST -Headers $h -Body $init
+$sid = $r.Headers["MCP-Session-Id"]
+$h2 = @{ "Content-Type"="application/json"; "Accept"="application/json"; "MCP-Protocol-Version"="2025-11-25"; "MCP-Session-Id"=$sid }
+$body = '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+Invoke-RestMethod -Uri "http://127.0.0.1:8100/mcp" -Method POST -Headers $h2 -Body $body
+```
+
+通知 `notifications/initialized`（无 `id` 字段）将返回 **202** 且无 JSON 正文。
+
+---
+
 ## 3. 手动调用工具（推荐先测）
 
 接口：`POST /mcp/invoke`

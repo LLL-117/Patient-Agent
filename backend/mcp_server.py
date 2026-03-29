@@ -5,9 +5,11 @@ from collections import Counter
 from typing import Any, Dict, List, Optional
 from urllib import error, request
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
+from starlette.responses import Response
 
+from backend.mcp_streamable_http import MCPSessionStore, mcp_endpoint_delete, run_mcp_post
 from backend.patient_db import PatientDatabase
 
 
@@ -328,11 +330,16 @@ class MCPToolbox:
 
 app = FastAPI(
   title="Modular MCP Server",
-  version="0.1.0",
-  description="模块化 MCP Server：身份验证、病例查询、就诊记录调取；支持 Qwen 路由调用。",
+  version="0.2.0",
+  description=(
+    "模块化 MCP Server：身份验证、病例查询、就诊记录调取；支持 Qwen 路由调用。\n\n"
+    "**MCP Streamable HTTP**：`POST /mcp` 为 JSON-RPC 2.0 单端点，响应使用 **application/json**（非 SSE、非 stdio）。"
+    "`GET /mcp` 返回 405（不提供 SSE 监听流）。兼容方法：`initialize`、`notifications/initialized`、`tools/list`、`tools/call`。"
+    "旧版 REST：`/mcp/tools`、`/mcp/invoke` 等仍保留。"
+  ),
   openapi_tags=[
     {"name": "System", "description": "系统检查"},
-    {"name": "MCP", "description": "MCP 工具列表与手动调用"},
+    {"name": "MCP", "description": "Streamable HTTP `/mcp` + 旧版 REST"},
     {"name": "Agent", "description": "Qwen 路由 + 工具自动调用"},
   ],
 )
@@ -340,11 +347,28 @@ app = FastAPI(
 db = PatientDatabase()
 toolbox = MCPToolbox(db=db)
 router_model = QwenRouter()
+_mcp_sessions = MCPSessionStore()
 
 
 @app.get("/health", tags=["System"])
 def health() -> Dict[str, Any]:
   return {"status": "ok", "qwen_enabled": router_model.enabled, "model": router_model.model}
+
+
+@app.post("/mcp", tags=["MCP"], summary="MCP Streamable HTTP（JSON-RPC，application/json 响应）")
+async def mcp_streamable_post(request: Request) -> Response:
+  """规范 2025-11-25：单端点 POST；非 SSE。客户端须 Accept 含 application/json（及规范中的 event-stream 可一并列出）。"""
+  return await run_mcp_post(request, toolbox, _mcp_sessions)
+
+
+@app.get("/mcp", tags=["MCP"], summary="不提供 SSE 流（返回 405）")
+def mcp_streamable_get() -> Response:
+  return Response(status_code=405, headers={"Allow": "POST, DELETE"})
+
+
+@app.delete("/mcp", tags=["MCP"], summary="终止 MCP 会话（MCP-Session-Id）")
+def mcp_streamable_delete(request: Request) -> Response:
+  return mcp_endpoint_delete(request, _mcp_sessions)
 
 
 @app.get("/mcp/tools", tags=["MCP"])

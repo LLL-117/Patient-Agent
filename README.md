@@ -66,13 +66,13 @@ python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
 
 ### 5. 可选：独立 MCP 服务
 
-若需单独调试 MCP 风格工具列表、invoke、ReAct 等，可在**同一仓库根目录**另起进程（端口示例 `8100`）：
+若需单独调试 MCP（**Streamable HTTP**：`POST /mcp` JSON-RPC、`application/json` 响应，**非** stdio/SSE；旧版 REST 仍可用）或 invoke、ReAct 等，可在**同一仓库根目录**另起进程（端口示例 `8100`）：
 
 ```bash
 python -m uvicorn backend.mcp_server:app --reload --host 127.0.0.1 --port 8100
 ```
 
-文档与示例见 `backend/MCP_QUICKSTART.md`。
+同进程还提供：**`POST /mcp`**（JSON-RPC Streamable HTTP，响应 `application/json`）、**`GET /mcp`**→405、**`DELETE /mcp`**（带 `MCP-Session-Id` 注销会话）；旧版 **`/mcp/tools`、`/mcp/invoke`、agent-call、agent-react** 仍可用。详细握手与示例见 `backend/MCP_QUICKSTART.md`。
 
 ### 6. 可选：种子数据
 
@@ -103,6 +103,7 @@ python -m uvicorn backend.mcp_server:app --reload --host 127.0.0.1 --port 8100
 │   ├── react_api.py
 │   ├── react_planner.py
 │   ├── mcp_server.py
+│   ├── mcp_streamable_http.py   # MCP 规范 Streamable HTTP（JSON-RPC 单端点，非 SSE）
 │   ├── seed_data.py
 │   ├── batch_seed_all_patients.py
 │   ├── convert_batch_data_to_cn.py
@@ -141,7 +142,8 @@ python -m uvicorn backend.mcp_server:app --reload --host 127.0.0.1 --port 8100
 | `session_media.py` | 拼装会话消息中的 Markdown 后缀（图片链接、语音链接等），避免正文塞满 base64。 |
 | `react_api.py` | 对外暴露 ReAct / 规划类路由（内部复用 `mcp_server.MCPToolbox` 等）。 |
 | `react_planner.py` | ReAct 规划与自洽等多步推理逻辑（HTTP 由 `react_api` 转发）。 |
-| `mcp_server.py` | 独立可启动的 FastAPI：MCP 风格 `tools` / `invoke`、轻量路由与 `agent-react`；与主应用数据模型思路一致，进程独立。 |
+| `mcp_server.py` | 独立 FastAPI：**`POST /mcp`** 为 MCP **Streamable HTTP**（JSON-RPC：`initialize`、`tools/list`、`tools/call` 等；响应 **application/json**，非 SSE）；`GET /mcp`→405；另保留 `GET /mcp/tools`、`POST /mcp/invoke`、`agent-call` / `agent-react`。 |
+| `mcp_streamable_http.py` | Streamable HTTP 的 JSON-RPC 分发、会话头 `MCP-Session-Id`、Origin 校验。 |
 | `seed_data.py` | 单患者或演示数据写入脚本入口（按脚本内用法执行）。 |
 | `batch_seed_all_patients.py` | 批量导入/种子患者数据脚本。 |
 | `convert_batch_data_to_cn.py` | 批量数据转中文/结构化落库辅助脚本。 |
@@ -191,4 +193,5 @@ python -m uvicorn backend.mcp_server:app --reload --host 127.0.0.1 --port 8100
 - **单进程主服务**即可覆盖病历 CRUD + Agent + 记忆；**MCP** 为可选第二进程。
 - 静态页中 **音色** 对应表单字段 **`tts_voice`**：传 **`none` 或不传** 表示不播报（无独立 `tts_enabled` 开关）。
 - **短期→长期**：用量阈值（默认）+ 可选定时后台（默认关）；详见上文环境变量与 `memory_refresh.py`。
+- **独立 MCP 进程**：优先使用规范 **`POST /mcp`**（`mcp_streamable_http.py`）；旧 REST 为兼容保留。
 - 更细的 **REST 路径列表、记忆表字段、环境变量全集** 以 `backend/PROJECT_INTERVIEW_GUIDE.md` 与源码为准。
