@@ -11,14 +11,18 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from .agent_module import router as agent_router
 from .react_api import router as react_router
-from .memory_extract import run_extract_from_business, run_extract_from_dialogue
+from .memory_extract import (
+  persist_extraction_result,
+  run_extract_from_business,
+  run_extract_from_dialogue,
+)
 from .memory_vector import (
   fts_search_events,
   hybrid_search,
-  index_key_events,
   reindex_all_key_events,
   vector_search,
 )
+from .memory_refresh import start_periodic_refresh_background, stop_periodic_refresh_background
 from .patient_db import PatientDatabase
 
 
@@ -106,6 +110,12 @@ async def _log_startup() -> None:
     "on" if _http_access_log_enabled() else "off",
     repr(raw_http),
   )
+  start_periodic_refresh_background(db)
+
+
+@app.on_event("shutdown")
+async def _shutdown_hooks() -> None:
+  stop_periodic_refresh_background()
 
 
 def _patient_id_from_code_or_404(patient_code: str) -> str:
@@ -381,27 +391,15 @@ def _patient_basic_dict(patient: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _persist_extraction(patient_id: str, result: Dict[str, Any]) -> MemoryExtractResponse:
-  err = result.get("error")
-  key_ids: List[str] = []
-  if result.get("key_events"):
-    try:
-      key_ids = db.insert_key_events(patient_id=patient_id, events=result["key_events"])
-    except ValueError:
-      raise HTTPException(status_code=404, detail="patient_not_found")
-    if key_ids:
-      try:
-        v_err = index_key_events(db, patient_id, key_ids)
-        if v_err:
-          logging.getLogger(__name__).warning("memory_vector_index: %s", v_err)
-      except Exception as e:
-        logging.getLogger(__name__).warning("memory_vector_index_failed: %s", e)
-  prof = result.get("user_profile") or {}
-  merged = db.merge_extracted_user_profile(patient_id=patient_id, profile=prof)
+  try:
+    out = persist_extraction_result(db, patient_id, result)
+  except ValueError:
+    raise HTTPException(status_code=404, detail="patient_not_found")
   return MemoryExtractResponse(
-    patient_id=patient_id,
-    key_event_ids=key_ids,
-    profile=merged.get("profile") or {},
-    extraction_error=err,
+    patient_id=out["patient_id"],
+    key_event_ids=out["key_event_ids"],
+    profile=out["profile"],
+    extraction_error=out["extraction_error"],
   )
 
 

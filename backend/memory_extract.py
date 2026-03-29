@@ -1,6 +1,10 @@
 import json
+import logging
 import os
-from typing import Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List
+
+if TYPE_CHECKING:
+  from .patient_db import PatientDatabase
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
@@ -153,3 +157,31 @@ def run_extract_from_business(
     return {"key_events": [], "user_profile": {}, "error": res["error"]}
   events = _normalize_events(res.get("parsed_events"), "emr")
   return {"key_events": events, "user_profile": res.get("user_profile") or {}, "error": None}
+
+
+def persist_extraction_result(db: "PatientDatabase", patient_id: str, result: Dict[str, Any]) -> Dict[str, Any]:
+  """
+  将抽取结果写入关键事件、尝试建向量索引、合并用户画像。
+  返回 dict：patient_id、key_event_ids、profile、extraction_error（与 MemoryExtractResponse 字段对齐）。
+  """
+  from .memory_vector import index_key_events
+
+  err = result.get("error")
+  key_ids: List[str] = []
+  if result.get("key_events"):
+    key_ids = db.insert_key_events(patient_id=patient_id, events=result["key_events"])
+    if key_ids:
+      try:
+        v_err = index_key_events(db, patient_id, key_ids)
+        if v_err:
+          logging.getLogger(__name__).warning("memory_vector_index: %s", v_err)
+      except Exception as e:
+        logging.getLogger(__name__).warning("memory_vector_index_failed: %s", e)
+  prof = result.get("user_profile") or {}
+  merged = db.merge_extracted_user_profile(patient_id=patient_id, profile=prof)
+  return {
+    "patient_id": patient_id,
+    "key_event_ids": key_ids,
+    "profile": merged.get("profile") or {},
+    "extraction_error": err,
+  }

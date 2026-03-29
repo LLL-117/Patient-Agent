@@ -13,6 +13,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from .memory_refresh import schedule_usage_refresh_if_needed
 from .memory_vector import hybrid_search
 from .patient_db import PatientDatabase, USER_PROFILE_KEY_EN_TO_ZH
 from .session_media import media_markdown_suffix
@@ -1172,6 +1173,7 @@ async def agent_query_multimodal(
               asst_extras["audio_format"] = resp.audio_format
           reply += media_markdown_suffix(origin, audio_url=resp.audio_url)
           db.append_session_message(pid, sid, "assistant", reply, extras=asst_extras)
+          schedule_usage_refresh_if_needed(db, pid, sid)
       except Exception:
         pass
 

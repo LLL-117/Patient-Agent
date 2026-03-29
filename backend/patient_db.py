@@ -193,6 +193,19 @@ class PatientDatabase:
         """
       )
       conn.execute("CREATE INDEX IF NOT EXISTS idx_session_memory_patient ON session_memory(patient_id)")
+      conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS memory_session_extract_state (
+          patient_id TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          last_usage_extract_msg_len INTEGER NOT NULL DEFAULT 0,
+          last_periodic_extract_at TEXT,
+          last_any_extract_at TEXT,
+          PRIMARY KEY (patient_id, session_id),
+          FOREIGN KEY (patient_id) REFERENCES patients(patient_id)
+        )
+        """
+      )
       conn.execute("CREATE INDEX IF NOT EXISTS idx_mke_patient ON memory_key_events(patient_id)")
       conn.execute(
         """
@@ -685,6 +698,82 @@ class PatientDatabase:
         "DELETE FROM session_memory WHERE session_id = ? AND patient_id = ?",
         (session_id, patient_id),
       )
+      conn.execute(
+        "DELETE FROM memory_session_extract_state WHERE session_id = ? AND patient_id = ?",
+        (session_id, patient_id),
+      )
+
+  def get_session_extract_state(self, patient_id: str, session_id: str) -> Dict[str, Any]:
+    with self._conn() as conn:
+      row = conn.execute(
+        """
+        SELECT last_usage_extract_msg_len, last_periodic_extract_at, last_any_extract_at
+        FROM memory_session_extract_state
+        WHERE patient_id = ? AND session_id = ?
+        """,
+        (patient_id, session_id),
+      ).fetchone()
+    if not row:
+      return {
+        "last_usage_extract_msg_len": 0,
+        "last_periodic_extract_at": None,
+        "last_any_extract_at": None,
+      }
+    return {
+      "last_usage_extract_msg_len": int(row["last_usage_extract_msg_len"] or 0),
+      "last_periodic_extract_at": row["last_periodic_extract_at"],
+      "last_any_extract_at": row["last_any_extract_at"],
+    }
+
+  def upsert_session_extract_state(
+    self,
+    patient_id: str,
+    session_id: str,
+    *,
+    last_usage_extract_msg_len: Optional[int] = None,
+    last_periodic_extract_at: Optional[str] = None,
+    last_any_extract_at: Optional[str] = None,
+  ) -> None:
+    cur = self.get_session_extract_state(patient_id, session_id)
+    lu = cur["last_usage_extract_msg_len"] if last_usage_extract_msg_len is None else last_usage_extract_msg_len
+    lp = cur["last_periodic_extract_at"] if last_periodic_extract_at is None else last_periodic_extract_at
+    la = cur["last_any_extract_at"] if last_any_extract_at is None else last_any_extract_at
+    now = _now_iso()
+    with self._conn() as conn:
+      conn.execute(
+        """
+        INSERT INTO memory_session_extract_state (
+          patient_id, session_id, last_usage_extract_msg_len, last_periodic_extract_at, last_any_extract_at
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(patient_id, session_id) DO UPDATE SET
+          last_usage_extract_msg_len = excluded.last_usage_extract_msg_len,
+          last_periodic_extract_at = excluded.last_periodic_extract_at,
+          last_any_extract_at = excluded.last_any_extract_at
+        """,
+        (patient_id, session_id, lu, lp, la),
+      )
+
+  def list_session_memory_rows(self) -> List[Dict[str, Any]]:
+    """供定期刷新扫描：返回 patient_id、session_id、messages 条数、updated_at。"""
+    with self._conn() as conn:
+      rows = conn.execute(
+        "SELECT patient_id, session_id, messages, updated_at FROM session_memory"
+      ).fetchall()
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+      try:
+        msgs = json.loads(r["messages"] or "[]")
+      except Exception:
+        msgs = []
+      out.append(
+        {
+          "patient_id": r["patient_id"],
+          "session_id": r["session_id"],
+          "message_count": len(msgs),
+          "updated_at": r["updated_at"],
+        }
+      )
+    return out
 
   def insert_key_events(self, patient_id: str, events: List[Dict[str, Any]]) -> List[str]:
     if not self.get_patient(patient_id=patient_id):

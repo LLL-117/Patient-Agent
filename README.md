@@ -36,8 +36,19 @@ pip install -r requirements.txt
 | `LOG_HTTP` | 设为 `1` 时打印 HTTP 访问日志 |
 | `TTS_ENABLED` | 设为 `false` / `0` 等可全局关闭服务端 TTS |
 | `QWEN_TTS_MODEL` / `COSYVOICE_TTS_MODEL` 等 | 详见代码内默认值与注释 |
+| `MEMORY_USAGE_EXTRACT_ENABLED` | 默认开启；`0`/`false` 关闭「**按消息量**将短期会话抽成长期记忆」 |
+| `MEMORY_USAGE_EXTRACT_THRESHOLD` | 默认 `20`；自上次用量抽取以来，session 内**新增消息条数**达到该值则触发一次抽取（需 `QWEN_API_KEY`） |
+| `MEMORY_PERIODIC_EXTRACT_ENABLED` | 默认 `false`；`1`/`true` 开启后台**定时**扫描各会话并抽取 |
+| `MEMORY_PERIODIC_EXTRACT_INTERVAL_SECONDS` | 默认 `86400`（秒）；定时任务每轮间隔，且同一会话两次定时抽取至少相隔该间隔 |
+| `MEMORY_PERIODIC_EXTRACT_MIN_MESSAGES` | 默认 `2`；定时任务仅处理消息数 ≥ 该值的会话 |
+| `MEMORY_EXTRACT_DEBOUNCE_SECONDS` | 默认 `120`；同一会话在窗口内不重复抽取（用量与定时共用，避免短时间重复调模型） |
 
-数据库路径由 `patient_db` 决定：默认在**项目根目录**下自动创建 `data/`，首次启动会建库。
+**短期 → 长期自动抽取（与手动 `extract-dialogue` 同源）**
+
+- **用量策略**（默认开）：`query-multimodal` 在本轮写入 user/assistant 后，若当前 session 自上次用量抽取以来**新增消息条数** ≥ `MEMORY_USAGE_EXTRACT_THRESHOLD`，则异步调用 `run_extract_from_dialogue` + `persist_extraction_result`（需 `QWEN_API_KEY`）。状态记在表 `memory_session_extract_state`。
+- **定时策略**（默认关）：`MEMORY_PERIODIC_EXTRACT_ENABLED=true` 时，`main` 启动后台协程，每隔 `MEMORY_PERIODIC_EXTRACT_INTERVAL_SECONDS` 扫描 `session_memory`，对满足「消息数 ≥ 最小值且距上次定时抽取已满间隔」的会话做同样抽取。启动日志会出现 `periodic memory extract started`；未开启时会出现 `periodic memory extract disabled`，属预期行为。
+
+数据库路径由 `patient_db` 决定：默认在**项目根目录**下自动创建 `data/`，首次访问时建库（含 `memory_session_extract_state` 等表）。
 
 ### 4. 启动主应用（必选）
 
@@ -86,6 +97,7 @@ python -m uvicorn backend.mcp_server:app --reload --host 127.0.0.1 --port 8100
 │   ├── agent_module.py
 │   ├── patient_db.py
 │   ├── memory_extract.py
+│   ├── memory_refresh.py        # 用量/定时：短期会话 → 长期记忆自动抽取
 │   ├── memory_vector.py
 │   ├── session_media.py
 │   ├── react_api.py
@@ -120,10 +132,11 @@ python -m uvicorn backend.mcp_server:app --reload --host 127.0.0.1 --port 8100
 
 | 文件 | 职责摘要 |
 |------|-----------|
-| `main.py` | 创建 `FastAPI` 实例；注册中间件；挂载 `StaticFiles`（`/test` → `backend/static`）；注册 `agent_router`、`react_router`；实现患者/病例/就诊的 REST、记忆设置、记忆抽取、向量重建与检索等 HTTP 接口。 |
-| `agent_module.py` | Agent 路由：`POST /api/agent/query-multimodal`（文本+可选图+`tts_voice`）；**纯问候**先匹配（`tool_name=agent.greeting`，不查库、不拼病历记忆块；含图时关闭问候短路）；**身份**：`patient_code` 与 `phone` 可只填其一，**若两者都填则须与库中为同一患者**（手机号按 11 位数字规范化比对）；失败时 HTTP 400/404 的 `detail` 为固定句「你输入的编号或手机号有误。」（未带任何身份且需查病历时仍返回 `identity.request_verification` 话术）。病历检索与 `_merge_memory_into_response`；Qwen 多模态与 Qwen-TTS / CosyVoice；`GET /api/agent/session-image/{id}`、`GET /api/agent/audio/{id}`。 |
-| `patient_db.py` | `PatientDatabase`：SQLite 与 `memory_*` 全表；`get_patient` / **`get_patient_by_phone`**（按登记手机匹配）；用户画像 **`normalize_user_profile_keys`**（英文键落库/展示统一为中文键，与抽取 schema 对齐）。 |
-| `memory_extract.py` | 调用 DashScope 对「对话」或「业务摘要」做 JSON 抽取：关键事件 + 用户画像；供 `main` 中抽取接口使用。 |
+| `main.py` | 创建 `FastAPI` 实例；注册中间件；挂载 `StaticFiles`（`/test` → `backend/static`）；注册 `agent_router`、`react_router`；患者/病例/就诊与记忆等 REST；**`startup`** 调用 **`start_periodic_refresh_background(db)`**，**`shutdown`** 调用 **`stop_periodic_refresh_background`**（可选定时短期→长期抽取）。 |
+| `agent_module.py` | Agent 路由：`POST /api/agent/query-multimodal`（文本+可选图+`tts_voice`）；**纯问候**先匹配（`tool_name=agent.greeting`，不查库、不拼病历记忆块；含图时关闭问候短路）；**身份**：`patient_code` 与 `phone` 可只填其一，**若两者都填则须与库中为同一患者**（手机号按 11 位数字规范化比对）；失败时 HTTP 400/404 的 `detail` 为固定句「你输入的编号或手机号有误。」（未带任何身份且需查病历时仍返回 `identity.request_verification` 话术）。会话写入成功后调用 **`schedule_usage_refresh_if_needed`**（见 `memory_refresh`）。病历检索与 `_merge_memory_into_response`；Qwen 多模态与 Qwen-TTS / CosyVoice；`GET /api/agent/session-image/{id}`、`GET /api/agent/audio/{id}`。 |
+| `patient_db.py` | `PatientDatabase`：SQLite 与 `memory_*` 全表；**`memory_session_extract_state`**（按 session 记录用量/定时抽取进度）；`get_patient` / **`get_patient_by_phone`**；**`list_session_memory_rows`**（供定时任务扫描）；用户画像 **`normalize_user_profile_keys`**。 |
+| `memory_extract.py` | 调用 DashScope 对「对话」或「业务摘要」做 JSON 抽取：关键事件 + 用户画像；`persist_extraction_result` 统一落库；供 `main` 与自动刷新使用。 |
+| `memory_refresh.py` | **用量阈值**与**定时**将短期会话抽成长期记忆（与 `extract-dialogue` 同源）；由 `query-multimodal` 写入会话后调度，及 `main` 启动可选后台任务。 |
 | `memory_vector.py` | 文本 embedding、关键事件入向量表；FTS5 全文；`hybrid_search` 等混合检索，供 Agent 上下文组装使用。 |
 | `session_media.py` | 拼装会话消息中的 Markdown 后缀（图片链接、语音链接等），避免正文塞满 base64。 |
 | `react_api.py` | 对外暴露 ReAct / 规划类路由（内部复用 `mcp_server.MCPToolbox` 等）。 |
@@ -156,7 +169,7 @@ python -m uvicorn backend.mcp_server:app --reload --host 127.0.0.1 --port 8100
 
 | 路径 | 内容 |
 |------|------|
-| `data/patient_agent.db` | 默认 SQLite：患者主数据、病例、就诊、会话记忆、关键事件、画像、向量、FTS 等；**删除前请备份**。 |
+| `data/patient_agent.db` | 默认 SQLite：患者主数据、病例、就诊、`session_memory`、**`memory_session_extract_state`**、关键事件、画像、向量、FTS 等；**删除前请备份**。 |
 | `backend/audio_cache/` | TTS 返回给前端的音频以文件形式缓存，通过 `/api/agent/audio/{audio_id}` 提供。 |
 | `backend/session_image_cache/` | 用户经多模态表单上传的图片落盘，会话正文内用短链引用。 |
 
@@ -177,4 +190,5 @@ python -m uvicorn backend.mcp_server:app --reload --host 127.0.0.1 --port 8100
 - **无前端构建链路**：联调依赖 `backend/static` 下 HTML + 浏览器直连 API。
 - **单进程主服务**即可覆盖病历 CRUD + Agent + 记忆；**MCP** 为可选第二进程。
 - 静态页中 **音色** 对应表单字段 **`tts_voice`**：传 **`none` 或不传** 表示不播报（无独立 `tts_enabled` 开关）。
+- **短期→长期**：用量阈值（默认）+ 可选定时后台（默认关）；详见上文环境变量与 `memory_refresh.py`。
 - 更细的 **REST 路径列表、记忆表字段、环境变量全集** 以 `backend/PROJECT_INTERVIEW_GUIDE.md` 与源码为准。
