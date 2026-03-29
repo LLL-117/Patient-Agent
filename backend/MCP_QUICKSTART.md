@@ -66,9 +66,9 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8100/mcp" -Method POST -Headers $h2 -Bo
 
 ---
 
-## 4. Agent 自动路由调用（Qwen）
+## 4. 统一 Agent（Qwen：难易判定 → 单次工具或 ReAct）
 
-接口：`POST /mcp/agent-call`
+接口：`POST /mcp/agent-call`（唯一 Agent 入口；与主应用 `POST /api/agent/react-plan` 同源逻辑）
 
 示例：
 

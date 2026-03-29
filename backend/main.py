@@ -77,7 +77,7 @@ app = FastAPI(
     {"name": "Agent", "description": "自然语言问答查询（身份验证/病例/就诊记录）"},
     {
       "name": "Planner",
-      "description": "ReAct + CoT + 自我一致性多轮推理与工具规划（/api/agent/react-plan）",
+      "description": "统一 Agent 规划：难易判定后单次工具或 ReAct（/api/agent/react-plan，与 MCP /mcp/agent-call 同源）",
     },
     {"name": "System", "description": "系统状态检查"},
     {"name": "Patient", "description": "患者身份信息写入与读取"},

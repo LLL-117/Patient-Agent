@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 320" width="900" height="320">
+  <defs>
+    <pattern id="gSmall" width="10" height="10" patternUnits="userSpaceOnUse">
+      <path d="M 10 0 L 0 0 0 10" fill="none" stroke="#f5d0d0" stroke-width="0.4"/>
+    </pattern>
+    <pattern id="gBig" width="50" height="50" patternUnits="userSpaceOnUse">
+      <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#e8a8a8" stroke-width="0.8"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="#fff8f8"/>
+  <rect width="100%" height="100%" fill="url(#gBig)"/>
+  <rect width="100%" height="100%" fill="url(#gSmall)"/>
+  <g transform="translate(40, 110)" fill="none" stroke="#1a237e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M0,0 l8,-2 l4,8 l6,-35 l8,85 l10,-118 l6,95 l5,-28 l4,12 l6,-8 l8,0"/>
+    <path transform="translate(83,0)" d="M0,0 l8,-2 l4,8 l6,-35 l8,85 l10,-118 l6,95 l5,-28 l4,12 l6,-8 l8,0"/>
+    <path transform="translate(166,0)" d="M0,0 l8,-2 l4,8 l6,-35 l8,85 l10,-118 l6,95 l5,-28 l4,12 l6,-8 l8,0"/>
+    <path transform="translate(249,0)" d="M0,0 l8,-2 l4,8 l6,-35 l8,85 l10,-118 l6,95 l5,-28 l4,12 l6,-8 l8,0"/>
+    <path transform="translate(332,0)" d="M0,0 l8,-2 l4,8 l6,-35 l8,85 l10,-118 l6,95 l5,-28 l4,12 l6,-8 l8,0"/>
+    <path transform="translate(415,0)" d="M0,0 l8,-2 l4,8 l6,-35 l8,85 l10,-118 l6,95 l5,-28 l4,12 l6,-8 l8,0"/>
+    <path transform="translate(498,0)" d="M0,0 l8,-2 l4,8 l6,-35 l8,85 l10,-118 l6,95 l5,-28 l4,12 l6,-8 l8,0"/>
+    <path transform="translate(581,0)" d="M0,0 l8,-2 l4,8 l6,-35 l8,85 l10,-118 l6,95 l5,-28 l4,12 l6,-8 l8,0"/>
+    <path transform="translate(664,0)" d="M0,0 l8,-2 l4,8 l6,-35 l8,85 l10,-118 l6,95 l5,-28 l4,12 l6,-8 l8,0"/>
+    <path transform="translate(747,0)" d="M0,0 l8,-2 l4,8 l6,-35 l8,85 l10,-118 l6,95 l5,-28 l4,12 l6,-8 l8,0"/>
+  </g>
+  <text x="40" y="36" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="15" fill="#333">模拟心电图 · 门诊筛查</text>
+  <text x="40" y="58" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="14" fill="#444">患者编号：P1003　姓名：王五　性别：男　出生：1992-11-12</text>
+  <text x="40" y="80" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="13" fill="#555">导联：II（示意）　节律：窦性　心率：约 72 次/分　提示：未见明显急性 ST-T 改变（示意，非诊断）</text>
+  <text x="40" y="268" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="11" fill="#777">与 seed 中消化内科随访（慢性胃炎待复核）一致，可作检查前心电图筛查示意。</text>
+</svg>

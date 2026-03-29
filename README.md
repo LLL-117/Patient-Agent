@@ -36,6 +36,8 @@ pip install -r requirements.txt
 | `LOG_HTTP` | 设为 `1` 时打印 HTTP 访问日志 |
 | `TTS_ENABLED` | 设为 `false` / `0` 等可全局关闭服务端 TTS |
 | `QWEN_TTS_MODEL` / `COSYVOICE_TTS_MODEL` 等 | 详见代码内默认值与注释 |
+| `QWEN_PLANNER_SC_RUNS` / `QWEN_PLANNER_TEMPERATURE` | 统一规划 **gate** 与 **simple** 路径：并行判定/采样次数与温度（默认 `3`、`0.35`），见 `unified_planner.py` |
+| `QWEN_REACT_MAX_STEPS` / `QWEN_REACT_SC_RUNS` / `QWEN_REACT_TEMPERATURE` 等 | **complex** 路径走 `react_planner`，详见 `react_planner.py` 文件头 |
 | `MEMORY_USAGE_EXTRACT_ENABLED` | 默认开启；`0`/`false` 关闭「**按消息量**将短期会话抽成长期记忆」 |
 | `MEMORY_USAGE_EXTRACT_THRESHOLD` | 默认 `20`；自上次用量抽取以来，session 内**新增消息条数**达到该值则触发一次抽取（需 `QWEN_API_KEY`） |
 | `MEMORY_PERIODIC_EXTRACT_ENABLED` | 默认 `false`；`1`/`true` 开启后台**定时**扫描各会话并抽取 |
@@ -66,13 +68,13 @@ python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
 
 ### 5. 可选：独立 MCP 服务
 
-若需单独调试 MCP（**Streamable HTTP**：`POST /mcp` JSON-RPC、`application/json` 响应，**非** stdio/SSE；旧版 REST 仍可用）或 invoke、ReAct 等，可在**同一仓库根目录**另起进程（端口示例 `8100`）：
+若需单独调试 MCP（**Streamable HTTP**：`POST /mcp` JSON-RPC、`application/json` 响应，**非** stdio/SSE；旧版 REST 仍可用）或 `invoke`、**统一 Agent（`POST /mcp/agent-call`）** 等，可在**同一仓库根目录**另起进程（端口示例 `8100`）：
 
 ```bash
 python -m uvicorn backend.mcp_server:app --reload --host 127.0.0.1 --port 8100
 ```
 
-同进程还提供：**`POST /mcp`**（JSON-RPC Streamable HTTP，响应 `application/json`）、**`GET /mcp`**→405、**`DELETE /mcp`**（带 `MCP-Session-Id` 注销会话）；旧版 **`/mcp/tools`、`/mcp/invoke`、agent-call、agent-react** 仍可用。详细握手与示例见 `backend/MCP_QUICKSTART.md`。
+同进程还提供：**`POST /mcp`**（JSON-RPC Streamable HTTP，响应 `application/json`）、**`GET /mcp`**→405、**`DELETE /mcp`**（带 `MCP-Session-Id` 注销会话）；旧版 **`/mcp/tools`、`/mcp/invoke`** 仍可用；**`POST /mcp/agent-call`** 为统一 Agent 唯一入口（难易判定后单次工具或 ReAct）。详细握手与示例见 `backend/MCP_QUICKSTART.md`。
 
 ### 6. 可选：种子数据
 
@@ -89,7 +91,7 @@ python -m uvicorn backend.mcp_server:app --reload --host 127.0.0.1 --port 8100
 ├── README.md                    # 项目说明（启动方式 + 目录结构）
 ├── requirements.txt             # Python 依赖（pip install -r requirements.txt）
 ├── tetris.html                  # 与主项目无关的独立静态页（若有）；可忽略
-├── assets/                      # 可选静态资源（如联调用测试图片）
+├── assets/                      # 可选静态资源（如 `test-images/` 下联调示意图片）
 │
 ├── backend/                     # Python 包：全部业务与 Agent 代码
 │   ├── __init__.py              # 包标识
@@ -102,6 +104,7 @@ python -m uvicorn backend.mcp_server:app --reload --host 127.0.0.1 --port 8100
 │   ├── session_media.py
 │   ├── react_api.py
 │   ├── react_planner.py
+│   ├── unified_planner.py       # 统一 Agent：gate 判 simple/complex；simple 单次工具+自洽，complex→ReAct
 │   ├── mcp_server.py
 │   ├── mcp_streamable_http.py   # MCP 规范 Streamable HTTP（JSON-RPC 单端点，非 SSE）
 │   ├── seed_data.py
@@ -111,6 +114,7 @@ python -m uvicorn backend.mcp_server:app --reload --host 127.0.0.1 --port 8100
 │   ├── PROJECT_INTERVIEW_GUIDE.md
 │   ├── MCP_QUICKSTART.md
 │   ├── static/                  # 浏览器联调页（挂载路径 /test）
+│   │   ├── demo_images/         # 可选：演示示意图（如 ecg_P1003.svg），非运行必需
 │   │   ├── patient_app.html
 │   │   ├── patient_query.html
 │   │   ├── patient_chat.html
@@ -140,9 +144,10 @@ python -m uvicorn backend.mcp_server:app --reload --host 127.0.0.1 --port 8100
 | `memory_refresh.py` | **用量阈值**与**定时**将短期会话抽成长期记忆（与 `extract-dialogue` 同源）；由 `query-multimodal` 写入会话后调度，及 `main` 启动可选后台任务。 |
 | `memory_vector.py` | 文本 embedding、关键事件入向量表；FTS5 全文；`hybrid_search` 等混合检索，供 Agent 上下文组装使用。 |
 | `session_media.py` | 拼装会话消息中的 Markdown 后缀（图片链接、语音链接等），避免正文塞满 base64。 |
-| `react_api.py` | 对外暴露 ReAct / 规划类路由（内部复用 `mcp_server.MCPToolbox` 等）。 |
-| `react_planner.py` | ReAct 规划与自洽等多步推理逻辑（HTTP 由 `react_api` 转发）。 |
-| `mcp_server.py` | 独立 FastAPI：**`POST /mcp`** 为 MCP **Streamable HTTP**（JSON-RPC：`initialize`、`tools/list`、`tools/call` 等；响应 **application/json**，非 SSE）；`GET /mcp`→405；另保留 `GET /mcp/tools`、`POST /mcp/invoke`、`agent-call` / `agent-react`。 |
+| `react_api.py` | **`POST /api/agent/react-plan`**：统一规划入口，内部调用 **`run_unified_agent_query`**（与 MCP **`POST /mcp/agent-call`** 同源）；复用 `mcp_server.MCPToolbox`。 |
+| `unified_planner.py` | **Gate prompt** 判定难易（`QWEN_PLANNER_SC_RUNS` 次采样多数决）；**simple** 为单次 CoT 式 JSON 规划 + 对 `tool_name` 自洽投票后 `invoke` 一次；**complex** 调用 `react_planner.run_react_with_self_consistency`。无 `QWEN_API_KEY` 时 simple 走关键词 fallback。 |
+| `react_planner.py` | ReAct 多步规划与轨迹自洽（由 `unified_planner` 在 complex 路径调用；亦可被测试直接调用）。 |
+| `mcp_server.py` | 独立 FastAPI：**`POST /mcp`** 为 MCP **Streamable HTTP**（JSON-RPC：`initialize`、`tools/list`、`tools/call` 等；响应 **application/json**，非 SSE）；`GET /mcp`→405；另保留 `GET /mcp/tools`、`POST /mcp/invoke`、**`POST /mcp/agent-call`**（唯一 MCP Agent 入口，与主应用 **`/api/agent/react-plan`** 同源）。**已移除**独立的 `agent-react` 路由。 |
 | `mcp_streamable_http.py` | Streamable HTTP 的 JSON-RPC 分发、会话头 `MCP-Session-Id`、Origin 校验。 |
 | `seed_data.py` | 单患者或演示数据写入脚本入口（按脚本内用法执行）。 |
 | `batch_seed_all_patients.py` | 批量导入/种子患者数据脚本。 |
@@ -193,5 +198,5 @@ python -m uvicorn backend.mcp_server:app --reload --host 127.0.0.1 --port 8100
 - **单进程主服务**即可覆盖病历 CRUD + Agent + 记忆；**MCP** 为可选第二进程。
 - 静态页中 **音色** 对应表单字段 **`tts_voice`**：传 **`none` 或不传** 表示不播报（无独立 `tts_enabled` 开关）。
 - **短期→长期**：用量阈值（默认）+ 可选定时后台（默认关）；详见上文环境变量与 `memory_refresh.py`。
-- **独立 MCP 进程**：优先使用规范 **`POST /mcp`**（`mcp_streamable_http.py`）；旧 REST 为兼容保留。
+- **独立 MCP 进程**：优先使用规范 **`POST /mcp`**（`mcp_streamable_http.py`）；旧 REST 为兼容保留；Agent 能力仅 **`POST /mcp/agent-call`**（与主应用 **`POST /api/agent/react-plan`** 同源，见 `unified_planner.py`）。
 - 更细的 **REST 路径列表、记忆表字段、环境变量全集** 以 `backend/PROJECT_INTERVIEW_GUIDE.md` 与源码为准。

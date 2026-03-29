@@ -1,12 +1,12 @@
-"""ReAct + CoT + 自我一致性：HTTP 入口（与主应用 Patient Agent 共用数据库与 MCP 工具箱）。"""
-from typing import Any, Dict, List, Optional
+"""统一 Agent 规划 HTTP 入口：与 MCP `POST /mcp/agent-call` 同源（`unified_planner`）。"""
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from .mcp_server import MCPToolbox
 from .patient_db import PatientDatabase
-from .react_planner import run_react_with_self_consistency
+from .unified_planner import run_unified_agent_query
 
 router = APIRouter(tags=["Planner"])
 _db = PatientDatabase()
@@ -18,18 +18,23 @@ class ReactPlanRequest(BaseModel):
     default_factory=dict,
     description="如 patient_id、patient_code、phone 等，供工具解析",
   )
-  max_steps: Optional[int] = Field(default=None, ge=1, le=12, description="单轨迹最大步数，默认读环境变量")
-  sc_runs: Optional[int] = Field(default=None, ge=1, le=8, description="自我一致性并行轨迹数")
+  max_steps: Optional[int] = Field(default=None, ge=1, le=12, description="complex 时单轨迹最大步数，默认读环境变量")
+  sc_runs: Optional[int] = Field(default=None, ge=1, le=8, description="complex 时 ReAct 并行轨迹数")
   include_all_episodes: bool = Field(
     default=False,
-    description="为 true 时返回全部并行轨迹（响应体较大，仅调试使用）",
+    description="complex 且为 true 时返回全部并行轨迹（响应体较大，仅调试使用）",
   )
 
 
 class ReactPlanResponse(BaseModel):
   ok: bool
-  strategy: str = "react_cot_self_consistency"
+  mode: Optional[Literal["simple", "complex"]] = None
+  strategy: Optional[str] = None
   final_answer: Optional[str] = None
+  tool_name: Optional[str] = None
+  router: Optional[Any] = None
+  tool_result: Optional[Any] = None
+  gate: Optional[Dict[str, Any]] = None
   vote: Optional[Dict[str, Any]] = None
   winner_trace: List[Dict[str, Any]] = Field(default_factory=list)
   episodes: Optional[List[Any]] = None
@@ -40,32 +45,21 @@ class ReactPlanResponse(BaseModel):
 @router.post(
   "/api/agent/react-plan",
   response_model=ReactPlanResponse,
-  summary="ReAct+CoT+自我一致性多轮规划",
+  summary="统一 Agent 规划（唯一对外入口）",
   description=(
-    "多轮 Thought→Action→Observation；每步含 cot_steps 思维链。"
-    "并行多条轨迹后对工具调用链做多数表决，在胜组内取平均置信度最高者。"
-    "需 QWEN_API_KEY；工具与 MCP `/mcp/agent-call` 一致。"
+    "模型在 prompt 中判定 simple/complex：simple 为单次 CoT 规划 + 工具自洽投票后执行一次；"
+    "complex 自动走 ReAct+CoT+多轨迹自我一致性。与 MCP `POST /mcp/agent-call` 一致。需 QWEN_API_KEY。"
   ),
 )
 def react_plan(req: ReactPlanRequest) -> ReactPlanResponse:
   toolbox = MCPToolbox(db=_db)
-  specs = toolbox.list_specs()
-  tool_summary = [
-    {"name": t.name, "description": t.description, "input_schema": t.input_schema} for t in specs
-  ]
-  allowed = [t.name for t in specs]
-
-  def invoke(name: str, args: Dict[str, Any]) -> Any:
-    return toolbox.invoke(name, args)
-
-  out = run_react_with_self_consistency(
+  out = run_unified_agent_query(
     user_query=req.user_query.strip(),
     context=req.context or {},
-    tool_summary=tool_summary,
-    invoke=invoke,
-    allowed_tools=allowed,
+    toolbox=toolbox,
     max_steps_override=req.max_steps,
     sc_runs_override=req.sc_runs,
+    include_react_episodes=req.include_all_episodes,
   )
 
   if not out.get("ok"):
@@ -75,12 +69,27 @@ def react_plan(req: ReactPlanRequest) -> ReactPlanResponse:
       run_errors=out.get("run_errors"),
     )
 
-  w = out["winner"]
+  mode = out.get("mode")
+  inner = out.get("result") or {}
+
+  if mode == "simple":
+    return ReactPlanResponse(
+      ok=True,
+      mode="simple",
+      tool_name=out.get("tool_name"),
+      router=inner.get("router"),
+      tool_result=inner.get("tool_result"),
+      gate=inner.get("gate") if isinstance(inner.get("gate"), dict) else None,
+    )
+
   return ReactPlanResponse(
     ok=True,
-    final_answer=w.get("final_answer"),
-    vote=out.get("vote"),
-    winner_trace=w.get("trace") or [],
-    episodes=out.get("episodes") if req.include_all_episodes else None,
-    run_errors=out.get("run_errors"),
+    mode="complex",
+    strategy=inner.get("strategy"),
+    final_answer=inner.get("final_answer"),
+    vote=inner.get("vote"),
+    winner_trace=inner.get("winner_trace") or [],
+    gate=inner.get("gate") if isinstance(inner.get("gate"), dict) else None,
+    episodes=inner.get("episodes"),
+    run_errors=inner.get("run_errors"),
   )
