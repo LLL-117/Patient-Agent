@@ -13,18 +13,18 @@
 
 ### 2. 安装依赖
 
-项目未附带 `requirements.txt`，请至少安装以下包（版本可与现有环境兼容即可）：
+在**项目根目录**执行（依赖列表见根目录 `requirements.txt`）：
 
 ```bash
-pip install "uvicorn[standard]" fastapi pydantic starlette dashscope
+pip install -r requirements.txt
 ```
 
 说明：
 
-- **FastAPI / Uvicorn / Starlette / Pydantic**：Web 服务与接口。
-- **dashscope**：调用通义兼容接口（对话、向量、多模态、CosyVoice TTS 等）；未配置 API Key 时部分功能会降级或返回明确错误，但服务仍可启动。
+- **FastAPI / Uvicorn / python-multipart / Pydantic**：Web 服务、表单与文件上传、数据校验。
+- **dashscope**：CosyVoice（`tts_v2`）与 Qwen TTS 等 SDK 调用；对话 / 向量 / 多模态主链路走兼容 HTTP，未配置 API Key 时部分能力会降级或返回明确错误，但服务仍可启动。
 
-语音合成若走 CosyVoice WebSocket，还需确保 **dashscope** 版本较新（含 `dashscope.audio.tts_v2`）。
+语音合成若走 CosyVoice，需 **dashscope** 版本满足 `dashscope.audio.tts_v2`（`requirements.txt` 中已设下限）。
 
 ### 3. 环境变量（按需）
 
@@ -76,7 +76,9 @@ python -m uvicorn backend.mcp_server:app --reload --host 127.0.0.1 --port 8100
 ```text
 <项目根目录>/                    # 启动 uvicorn 时的工作目录（须能 import backend）
 ├── README.md                    # 项目说明（启动方式 + 目录结构）
+├── requirements.txt             # Python 依赖（pip install -r requirements.txt）
 ├── tetris.html                  # 与主项目无关的独立静态页（若有）；可忽略
+├── assets/                      # 可选静态资源（如联调用测试图片）
 │
 ├── backend/                     # Python 包：全部业务与 Agent 代码
 │   ├── __init__.py              # 包标识
@@ -104,8 +106,7 @@ python -m uvicorn backend.mcp_server:app --reload --host 127.0.0.1 --port 8100
 │   │   ├── memory_chat_test.html
 │   │   └── session_memory_view.html
 │   ├── audio_cache/             # 【运行时生成】TTS 生成的音频文件
-│   ├── session_image_cache/     # 【运行时生成】会话内上传图片落盘
-│   └── .idea/                   # JetBrains IDE 工程文件（可选，勿当作业务代码）
+│   └── session_image_cache/     # 【运行时生成】会话内上传图片落盘
 │
 └── data/                        # 【运行时生成】SQLite 等业务数据目录
     └── patient_agent.db         # 默认数据库文件名（首次访问时创建）
@@ -120,8 +121,8 @@ python -m uvicorn backend.mcp_server:app --reload --host 127.0.0.1 --port 8100
 | 文件 | 职责摘要 |
 |------|-----------|
 | `main.py` | 创建 `FastAPI` 实例；注册中间件；挂载 `StaticFiles`（`/test` → `backend/static`）；注册 `agent_router`、`react_router`；实现患者/病例/就诊的 REST、记忆设置、记忆抽取、向量重建与检索等 HTTP 接口。 |
-| `agent_module.py` | Agent 路由：`POST /api/agent/query-multimodal`（文本+可选图+可选 TTS）；纯问候语短路；病历检索结果与长期记忆块合并；Qwen 多模态与 Qwen-TTS / CosyVoice TTS；会话图片落盘与 `GET /api/agent/session-image/{id}`、`GET /api/agent/audio/{id}`。 |
-| `patient_db.py` | `PatientDatabase`：SQLite 连接、表初始化；患者/病例/就诊 CRUD；`memory_*` 相关表（会话、关键事件、画像、偏好、向量块）；用户画像键名中英文规范化合并。 |
+| `agent_module.py` | Agent 路由：`POST /api/agent/query-multimodal`（文本+可选图+`tts_voice`）；**纯问候**先匹配（`tool_name=agent.greeting`，不查库、不拼病历记忆块；含图时关闭问候短路）；**身份**：`patient_code` 与 `phone` 可只填其一，**若两者都填则须与库中为同一患者**（手机号按 11 位数字规范化比对）；失败时 HTTP 400/404 的 `detail` 为固定句「你输入的编号或手机号有误。」（未带任何身份且需查病历时仍返回 `identity.request_verification` 话术）。病历检索与 `_merge_memory_into_response`；Qwen 多模态与 Qwen-TTS / CosyVoice；`GET /api/agent/session-image/{id}`、`GET /api/agent/audio/{id}`。 |
+| `patient_db.py` | `PatientDatabase`：SQLite 与 `memory_*` 全表；`get_patient` / **`get_patient_by_phone`**（按登记手机匹配）；用户画像 **`normalize_user_profile_keys`**（英文键落库/展示统一为中文键，与抽取 schema 对齐）。 |
 | `memory_extract.py` | 调用 DashScope 对「对话」或「业务摘要」做 JSON 抽取：关键事件 + 用户画像；供 `main` 中抽取接口使用。 |
 | `memory_vector.py` | 文本 embedding、关键事件入向量表；FTS5 全文；`hybrid_search` 等混合检索，供 Agent 上下文组装使用。 |
 | `session_media.py` | 拼装会话消息中的 Markdown 后缀（图片链接、语音链接等），避免正文塞满 base64。 |
@@ -167,7 +168,7 @@ python -m uvicorn backend.mcp_server:app --reload --host 127.0.0.1 --port 8100
 |------|------|
 | `backend/PROJECT_INTERVIEW_GUIDE.md` | 架构、记忆分层、接口索引、面试表述等**长篇说明**，适合深入阅读。 |
 | `backend/MCP_QUICKSTART.md` | 独立 MCP 进程启动、工具列表与调用示例。 |
-| `backend/.idea/` | IDE 配置；不参与运行，团队开发时可加入 `.gitignore`。 |
+| 根目录 `.gitignore` | 已忽略 `.venv`、`data/*.db`、`backend/audio_cache/`、`backend/session_image_cache/`、`.env`、`.idea/` 等；提交前勿把密钥与本地库文件推进仓库。 |
 
 ---
 
@@ -175,4 +176,5 @@ python -m uvicorn backend.mcp_server:app --reload --host 127.0.0.1 --port 8100
 
 - **无前端构建链路**：联调依赖 `backend/static` 下 HTML + 浏览器直连 API。
 - **单进程主服务**即可覆盖病历 CRUD + Agent + 记忆；**MCP** 为可选第二进程。
-- 更细的 **REST 路径列表、记忆表字段、环境变量全集** 以 `PROJECT_INTERVIEW_GUIDE.md` 与源码为准。
+- 静态页中 **音色** 对应表单字段 **`tts_voice`**：传 **`none` 或不传** 表示不播报（无独立 `tts_enabled` 开关）。
+- 更细的 **REST 路径列表、记忆表字段、环境变量全集** 以 `backend/PROJECT_INTERVIEW_GUIDE.md` 与源码为准。

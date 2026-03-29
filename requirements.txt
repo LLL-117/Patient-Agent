@@ -1,0 +1,10 @@
+# Web 服务
+fastapi>=0.110.0,<1
+uvicorn[standard]>=0.29.0,<1
+python-multipart>=0.0.9
+
+# 数据校验（FastAPI 会拉取；显式写出便于锁定大版本）
+pydantic>=2.4.0,<3
+
+# 阿里云 DashScope：多模态 / CosyVoice(Qwen) TTS 等；未配置 Key 时相关能力会降级
+dashscope>=1.20.0
